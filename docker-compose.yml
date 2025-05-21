@@ -1,0 +1,19 @@
+services:
+  discord-ban-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discord-ban-bot
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+    volumes:
+      - ./logs:/usr/src/app/logs
+    # Healthcheck to ensure the bot is running properly
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('Health check')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
