@@ -10,6 +10,7 @@ import {
   PermissionsBitField,
   ApplicationCommandOptionType,
   CommandInteraction,
+  ChatInputCommandInteraction,
   GuildMember,
   Role
 } from 'discord.js';
@@ -20,9 +21,10 @@ dotenv.config();
 
 // Define role IDs and their ban durations in milliseconds
 const ROLE_BAN_DURATIONS = {
-  '1312878122005168168': 1000 * 60 * 60 * 24 * 30 * 3,     // 3 months - 13-18
-  '1312872484546285630': 1000 * 60 * 60 * 24 * 365,         // 1 year - Cis
-  '1312877981311565835': 1000 * 60 * 60 * 24 * 365 * 6      // 6 years - 0-12
+  // Replace these with your actual role IDs
+  'ROLE_ID_1': 1000 * 60 * 60 * 24 * 30 * 6,     // 6 months
+  'ROLE_ID_2': 1000 * 60 * 60 * 24 * 365,         // 1 year
+  'ROLE_ID_3': 1000 * 60 * 60 * 24 * 365 * 6      // 6 years
 };
 
 // Initialize Discord client
@@ -95,7 +97,9 @@ async function handleTempBanCommand(interaction: CommandInteraction) {
     return;
   }
   
-  // Get the target user
+  // Get the target user (cast to ChatInputCommandInteraction for proper typing)
+  if (!interaction.isChatInputCommand()) return;
+  
   const targetUser = interaction.options.getUser('user');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
@@ -182,6 +186,9 @@ function getBanDurationFromRoles(member: GuildMember): number {
 // Function to handle the ping command
 async function handlePingCommand(interaction: CommandInteraction) {
   try {
+    // Check if this is a chat input command
+    if (!interaction.isChatInputCommand()) return;
+    
     // Initial response
     const initialResponse = await interaction.reply({ 
       content: '📡 Pinging...',
