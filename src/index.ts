@@ -21,7 +21,7 @@ dotenv.config();
 // Define role IDs and their ban durations in milliseconds
 const ROLE_BAN_DURATIONS = {
   // Replace these with your actual role IDs
-  'ROLE_ID_1': 1000 * 60 * 60 * 24 * 30 * 6,     // 6 months
+  'ROLE_ID_1': 1000 * 60 * 60 * 24 * 30 * 3,     // 3 months
   'ROLE_ID_2': 1000 * 60 * 60 * 24 * 365,         // 1 year
   'ROLE_ID_3': 1000 * 60 * 60 * 24 * 365 * 6      // 6 years
 };
