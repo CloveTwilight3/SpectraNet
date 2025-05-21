@@ -41,10 +41,11 @@ const client = new Client({
 client.once('ready', () => {
   console.log(`Logged in as ${client.user?.tag}`);
   
-  // Register slash command
+  // Register slash commands
   const guilds = client.guilds.cache;
   
   guilds.forEach(async (guild) => {
+    // Register tempban command
     await guild.commands.create({
       name: 'tempban',
       description: 'Temporarily ban a user based on their role',
@@ -64,6 +65,12 @@ client.once('ready', () => {
       ]
     });
     
+    // Register ping command
+    await guild.commands.create({
+      name: 'ping',
+      description: 'Check the bot\'s latency'
+    });
+    
     console.log(`Commands registered in guild: ${guild.name}`);
   });
 });
@@ -76,6 +83,8 @@ client.on('interactionCreate', async (interaction) => {
   
   if (commandName === 'tempban') {
     await handleTempBanCommand(interaction);
+  } else if (commandName === 'ping') {
+    await handlePingCommand(interaction);
   }
 });
 
@@ -171,6 +180,54 @@ function getBanDurationFromRoles(member: GuildMember): number {
   return maxDuration;
 }
 
+// Function to handle the ping command
+async function handlePingCommand(interaction: CommandInteraction) {
+  try {
+    // Initial response
+    const initialResponse = await interaction.reply({ 
+      content: '📡 Pinging...',
+      fetchReply: true
+    });
+    
+    // Calculate different latency metrics
+    const apiLatency = Math.round(client.ws.ping); // WebSocket latency
+    
+    // Calculate round-trip latency (time between command and response)
+    const roundTripLatency = initialResponse.createdTimestamp - interaction.createdTimestamp;
+    
+    // Create an embed with the latency information
+    const embed = new EmbedBuilder()
+      .setTitle('🏓 Pong!')
+      .setColor('#00FF00')
+      .addFields(
+        { name: 'API Latency', value: `${apiLatency}ms`, inline: true },
+        { name: 'Round-trip Latency', value: `${roundTripLatency}ms`, inline: true },
+        { name: 'Uptime', value: formatUptime(client.uptime || 0) }
+      )
+      .setFooter({ text: 'Bot Status' })
+      .setTimestamp();
+    
+    // Edit the initial response with the embed
+    await interaction.editReply({ content: '', embeds: [embed] });
+  } catch (error) {
+    console.error('Error in ping command:', error);
+    await interaction.reply({
+      content: 'An error occurred while checking latency.',
+      ephemeral: true
+    });
+  }
+}
+
+// Helper function to format uptime
+function formatUptime(uptime: number): string {
+  const seconds = Math.floor(uptime / 1000) % 60;
+  const minutes = Math.floor(uptime / (1000 * 60)) % 60;
+  const hours = Math.floor(uptime / (1000 * 60 * 60)) % 24;
+  const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
+  
+  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
+
 // Function to send a DM with embed to the banned user
 async function sendBanDM(member: GuildMember, reason: string, unbanDate: Date) {
   try {
@@ -181,7 +238,7 @@ async function sendBanDM(member: GuildMember, reason: string, unbanDate: Date) {
       .addFields(
         { name: 'Reason', value: reason },
         { name: 'Ban expires', value: unbanDate.toLocaleString() },
-        { name: 'If you think this was an error, please email mods@transgamers.org }
+        { name: 'Appeal Information', value: 'If you think this ban has been in error, you can email mods@transgamers.org' }
       )
       .setTimestamp()
       .setFooter({ text: `${member.guild.name} Moderation` });
