@@ -49,17 +49,15 @@ client.once('ready', () => {
   const guilds = client.guilds.cache;
   
   guilds.forEach(async (guild) => {
-    const commands = [];
-    
     // Always register ping command
-    commands.push({
+    await guild.commands.create({
       name: 'ping',
       description: 'Check the bot\'s latency'
     });
     
     // Register test commands only if testing is enabled
     if (TESTING_ENABLED) {
-      commands.push({
+      await guild.commands.create({
         name: 'testban',
         description: '[TEST] Manually test the ban system on a user',
         options: [
@@ -78,7 +76,7 @@ client.once('ready', () => {
         ]
       });
       
-      commands.push({
+      await guild.commands.create({
         name: 'checkroles',
         description: '[TEST] Check what roles a user has and their ban duration',
         options: [
@@ -90,11 +88,6 @@ client.once('ready', () => {
           }
         ]
       });
-    }
-    
-    // Register all commands
-    for (const command of commands) {
-      await guild.commands.create(command);
     }
     
     console.log(`Commands registered in guild: ${guild.name}`);
@@ -268,7 +261,7 @@ async function handleCheckRolesCommand(interaction: CommandInteraction) {
       );
     
     // List bannable roles
-    const bannableRoles = [];
+    const bannableRoles: string[] = [];
     member.roles.cache.forEach((role: Role) => {
       const duration = ROLE_BAN_DURATIONS[role.id as keyof typeof ROLE_BAN_DURATIONS];
       if (duration) {
