@@ -1,5 +1,5 @@
 // Discord Ban Bot - TypeScript
-// This bot bans users for specific durations based on their roles
+// This bot automatically bans users when they receive specific roles
 // and sends them a DM with an embedded message
 
 import { 
@@ -26,6 +26,9 @@ const ROLE_BAN_DURATIONS = {
   '1312877981311565835': 1000 * 60 * 60 * 24 * 365 * 6     // 6 years
 };
 
+// Check if testing is enabled
+const TESTING_ENABLED = process.env.TESTING_ENABLED === 'true';
+
 // Initialize Discord client
 const client = new Client({
   intents: [
@@ -40,39 +43,98 @@ const client = new Client({
 // Bot ready event
 client.once('ready', () => {
   console.log(`Logged in as ${client.user?.tag}`);
+  console.log(`Testing mode: ${TESTING_ENABLED ? 'ENABLED' : 'DISABLED'}`);
   
   // Register slash commands
   const guilds = client.guilds.cache;
   
   guilds.forEach(async (guild) => {
-    // Register tempban command
-    await guild.commands.create({
-      name: 'tempban',
-      description: 'Temporarily ban a user based on their role',
-      options: [
-        {
-          name: 'user',
-          description: 'The user to ban',
-          type: ApplicationCommandOptionType.User,
-          required: true
-        },
-        {
-          name: 'reason',
-          description: 'Reason for the ban',
-          type: ApplicationCommandOptionType.String,
-          required: true
-        }
-      ]
-    });
+    const commands = [];
     
-    // Register ping command
-    await guild.commands.create({
+    // Always register ping command
+    commands.push({
       name: 'ping',
       description: 'Check the bot\'s latency'
     });
     
+    // Register test commands only if testing is enabled
+    if (TESTING_ENABLED) {
+      commands.push({
+        name: 'testban',
+        description: '[TEST] Manually test the ban system on a user',
+        options: [
+          {
+            name: 'user',
+            description: 'The user to test ban',
+            type: ApplicationCommandOptionType.User,
+            required: true
+          },
+          {
+            name: 'reason',
+            description: 'Reason for the test ban',
+            type: ApplicationCommandOptionType.String,
+            required: false
+          }
+        ]
+      });
+      
+      commands.push({
+        name: 'checkroles',
+        description: '[TEST] Check what roles a user has and their ban duration',
+        options: [
+          {
+            name: 'user',
+            description: 'The user to check',
+            type: ApplicationCommandOptionType.User,
+            required: true
+          }
+        ]
+      });
+    }
+    
+    // Register all commands
+    for (const command of commands) {
+      await guild.commands.create(command);
+    }
+    
     console.log(`Commands registered in guild: ${guild.name}`);
   });
+});
+
+// Listen for role updates (when users get new roles)
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+  try {
+    // Check if any new roles were added
+    const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
+    
+    if (addedRoles.size > 0) {
+      // Check if any of the added roles require a ban
+      for (const [roleId] of addedRoles) {
+        if (ROLE_BAN_DURATIONS[roleId as keyof typeof ROLE_BAN_DURATIONS]) {
+          console.log(`User ${newMember.user.tag} received bannable role ${roleId}`);
+          await handleAutomaticBan(newMember, `Automatically banned for receiving role: ${addedRoles.get(roleId)?.name}`);
+          break; // Only need to ban once
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in guildMemberUpdate:', error);
+  }
+});
+
+// Listen for new members joining (in case they already have the roles)
+client.on('guildMemberAdd', async (member) => {
+  try {
+    // Check if the new member already has any bannable roles
+    const banDuration = getBanDurationFromRoles(member);
+    
+    if (banDuration > 0) {
+      console.log(`New member ${member.user.tag} joined with bannable roles`);
+      await handleAutomaticBan(member, 'Automatically banned for having restricted role upon joining');
+    }
+  } catch (error) {
+    console.error('Error in guildMemberAdd:', error);
+  }
 });
 
 // Interaction handler for slash commands
@@ -81,45 +143,21 @@ client.on('interactionCreate', async (interaction) => {
   
   const { commandName } = interaction;
   
-  if (commandName === 'tempban') {
-    await handleTempBanCommand(interaction);
-  } else if (commandName === 'ping') {
+  if (commandName === 'ping') {
     await handlePingCommand(interaction);
+  } else if (commandName === 'testban' && TESTING_ENABLED) {
+    await handleTestBanCommand(interaction);
+  } else if (commandName === 'checkroles' && TESTING_ENABLED) {
+    await handleCheckRolesCommand(interaction);
   }
 });
 
-// Function to handle the tempban command
-async function handleTempBanCommand(interaction: CommandInteraction) {
-  // Check if the user has permission to ban
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers)) {
-    await interaction.reply({ content: 'You do not have permission to ban members!', ephemeral: true });
-    return;
-  }
-  
-  // Get the target user (cast to ChatInputCommandInteraction for proper typing)
-  if (!interaction.isChatInputCommand()) return;
-  
-  const targetUser = interaction.options.getUser('user');
-  const reason = interaction.options.getString('reason') || 'No reason provided';
-  
-  if (!targetUser) {
-    await interaction.reply({ content: 'Invalid user specified.', ephemeral: true });
-    return;
-  }
-  
-  // Get the guild member for the target user
-  const guild = interaction.guild;
-  if (!guild) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
-    return;
-  }
-  
+// Function to handle automatic banning
+async function handleAutomaticBan(member: GuildMember, reason: string) {
   try {
-    const member = await guild.members.fetch(targetUser.id);
-    
     // Check if the member can be banned
     if (!member.bannable) {
-      await interaction.reply({ content: 'I cannot ban this user. They may have higher permissions than me.', ephemeral: true });
+      console.log(`Cannot ban ${member.user.tag} - insufficient permissions`);
       return;
     }
     
@@ -127,7 +165,7 @@ async function handleTempBanCommand(interaction: CommandInteraction) {
     const banDuration = getBanDurationFromRoles(member);
     
     if (banDuration === 0) {
-      await interaction.reply({ content: 'This user does not have any roles that qualify for a temporary ban.', ephemeral: true });
+      console.log(`No bannable roles found for ${member.user.tag}`);
       return;
     }
     
@@ -140,28 +178,114 @@ async function handleTempBanCommand(interaction: CommandInteraction) {
     // Ban the user
     await member.ban({ reason: `${reason} | Until: ${unbanDate.toLocaleString()}` });
     
+    // Log the ban
+    const durationText = formatBanDuration(banDuration);
+    console.log(`Banned ${member.user.tag} for ${durationText}. Reason: ${reason}`);
+    
     // Set timeout to unban the user
     setTimeout(async () => {
       try {
-        await guild.members.unban(targetUser.id, 'Temporary ban expired');
-        console.log(`Unbanned user ${targetUser.tag} (${targetUser.id})`);
+        await member.guild.members.unban(member.user.id, 'Temporary ban expired');
+        console.log(`Unbanned user ${member.user.tag} (${member.user.id})`);
       } catch (error) {
         console.error('Error unbanning user:', error);
       }
     }, banDuration);
     
-    // Format ban duration for display
-    const durationText = formatBanDuration(banDuration);
+  } catch (error) {
+    console.error('Error in automatic ban:', error);
+  }
+}
+
+// Function to handle the test ban command (only available in testing mode)
+async function handleTestBanCommand(interaction: CommandInteraction) {
+  // Check if the user has permission to ban
+  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers)) {
+    await interaction.reply({ content: 'You do not have permission to ban members!', ephemeral: true });
+    return;
+  }
+  
+  if (!interaction.isChatInputCommand()) return;
+  
+  const targetUser = interaction.options.getUser('user');
+  const reason = interaction.options.getString('reason') || 'Test ban';
+  
+  if (!targetUser) {
+    await interaction.reply({ content: 'Invalid user specified.', ephemeral: true });
+    return;
+  }
+  
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    return;
+  }
+  
+  try {
+    const member = await guild.members.fetch(targetUser.id);
     
-    await interaction.reply({
-      content: `Banned ${targetUser.tag} for ${durationText}. Reason: ${reason}`,
-      ephemeral: false
-    });
+    await interaction.reply({ content: `Testing ban system on ${targetUser.tag}...`, ephemeral: true });
+    await handleAutomaticBan(member, `[TEST] ${reason}`);
     
   } catch (error) {
-    console.error('Error in tempban command:', error);
+    console.error('Error in test ban command:', error);
     await interaction.reply({
-      content: 'An error occurred while trying to ban the user.',
+      content: 'An error occurred while testing the ban system.',
+      ephemeral: true
+    });
+  }
+}
+
+// Function to handle the check roles command (only available in testing mode)
+async function handleCheckRolesCommand(interaction: CommandInteraction) {
+  if (!interaction.isChatInputCommand()) return;
+  
+  const targetUser = interaction.options.getUser('user');
+  
+  if (!targetUser) {
+    await interaction.reply({ content: 'Invalid user specified.', ephemeral: true });
+    return;
+  }
+  
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    return;
+  }
+  
+  try {
+    const member = await guild.members.fetch(targetUser.id);
+    const banDuration = getBanDurationFromRoles(member);
+    
+    const embed = new EmbedBuilder()
+      .setTitle('🔍 Role Check Results')
+      .setColor('#0099FF')
+      .setDescription(`Role analysis for ${targetUser.tag}`)
+      .addFields(
+        { name: 'User', value: `${targetUser.tag} (${targetUser.id})` },
+        { name: 'Total Roles', value: member.roles.cache.size.toString() },
+        { name: 'Ban Duration', value: banDuration > 0 ? formatBanDuration(banDuration) : 'No bannable roles' }
+      );
+    
+    // List bannable roles
+    const bannableRoles = [];
+    member.roles.cache.forEach((role: Role) => {
+      const duration = ROLE_BAN_DURATIONS[role.id as keyof typeof ROLE_BAN_DURATIONS];
+      if (duration) {
+        bannableRoles.push(`${role.name} (${formatBanDuration(duration)})`);
+      }
+    });
+    
+    if (bannableRoles.length > 0) {
+      embed.addFields({ name: 'Bannable Roles', value: bannableRoles.join('\n') });
+    }
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    
+  } catch (error) {
+    console.error('Error in check roles command:', error);
+    await interaction.reply({
+      content: 'An error occurred while checking roles.',
       ephemeral: true
     });
   }
@@ -207,7 +331,8 @@ async function handlePingCommand(interaction: CommandInteraction) {
       .addFields(
         { name: 'API Latency', value: `${apiLatency}ms`, inline: true },
         { name: 'Round-trip Latency', value: `${roundTripLatency}ms`, inline: true },
-        { name: 'Uptime', value: formatUptime(client.uptime || 0) }
+        { name: 'Uptime', value: formatUptime(client.uptime || 0) },
+        { name: 'Testing Mode', value: TESTING_ENABLED ? '✅ Enabled' : '❌ Disabled', inline: true }
       )
       .setFooter({ text: 'Bot Status' })
       .setTimestamp();
