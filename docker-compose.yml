@@ -8,6 +8,7 @@ services:
     environment:
       - NODE_ENV=production
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - TESTING_ENABLED=${TESTING_ENABLED}
     volumes:
       - ./logs:/usr/src/app/logs
     # Healthcheck to ensure the bot is running properly
