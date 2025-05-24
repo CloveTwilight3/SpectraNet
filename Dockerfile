@@ -1,27 +1,35 @@
-# Use Node.js LTS as the base image
-FROM node:20-alpine
+FROM node:18-alpine
 
-# Create app directory
-WORKDIR /usr/src/app
+# Set working directory
+WORKDIR /app
 
-# Copy package files
+# Install dependencies first (for better caching)
 COPY package*.json ./
+RUN npm ci --only=production
 
-# Install dependencies
-RUN npm install
+# Copy source code
+COPY . .
 
-# Copy tsconfig
-COPY tsconfig.json ./
-
-# Create src directory and copy source code
-RUN mkdir -p ./src
-COPY src ./src/
-
-# Build the application
+# Build the TypeScript code
 RUN npm run build
 
-# Clean up dev dependencies to reduce image size
-RUN npm prune --production
+# Create logs directory
+RUN mkdir -p logs
 
-# Command to run the bot
-CMD ["node", "dist/index.js"]
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+
+# Change ownership of the app directory
+RUN chown -R nodejs:nodejs /app
+USER nodejs
+
+# Expose port (if needed for health checks)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node healthcheck.js || exit 1
+
+# Start the bot
+CMD ["npm", "start"]
