@@ -1,20 +1,67 @@
 services:
-  discord-ban-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: discord-ban-bot
+  postgres:
+    image: postgres:15-alpine
+    container_name: honeypot_postgres
+    environment:
+      POSTGRES_DB: honeypot_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - honeypot_network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  discord_bot:
+    build: .
+    container_name: honeypot_bot
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - TESTING_ENABLED=${TESTING_ENABLED}
+    env_file:
+      - .env
+    networks:
+      - honeypot_network
+    restart: unless-stopped
     volumes:
-      - ./logs:/usr/src/app/logs
-    # Healthcheck to ensure the bot is running properly
+      - ./logs:/app/logs
     healthcheck:
-      test: ["CMD", "node", "-e", "console.log('Health check')"]
+      test: ["CMD", "node", "healthcheck.js"]
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 20s
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: honeypot_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@honeypot.local
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+    ports:
+      - "8080:80"
+    networks:
+      - honeypot_network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - admin
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  honeypot_network:
+    driver: bridge
