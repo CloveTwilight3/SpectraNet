@@ -1,20 +1,48 @@
 {
-  "name": "discord-ban-bot",
-  "version": "1.0.0",
-  "description": "A Discord bot that temporarily bans users based on their roles",
-  "main": "index.js",
+  "name": "discord-honeypot-bot",
+  "version": "2.0.0",
+  "description": "Discord bot for honeypot role and channel moderation with database integration",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc -w",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f discord_bot",
+    "db:reset": "docker-compose down -v && docker-compose up -d postgres",
+    "lint": "eslint src/**/*.ts",
+    "test": "jest"
   },
   "dependencies": {
-    "discord.js": "^14.13.0",
-    "dotenv": "^16.3.1"
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3"
   },
   "devDependencies": {
-    "@types/node": "^20.4.5",
+    "@types/node": "^20.10.4",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3",
     "ts-node": "^10.9.1",
-    "typescript": "^5.1.6"
-  }
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "moderation",
+    "honeypot",
+    "typescript",
+    "postgresql"
+  ],
+  "author": "Clove Twilight",
+  "license": "MIT"
 }
