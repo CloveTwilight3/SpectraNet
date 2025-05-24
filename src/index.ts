@@ -1,410 +1,573 @@
-// Discord Ban Bot - TypeScript
-// This bot automatically bans users when they receive specific roles
-// and sends them a DM with an embedded message
-
-import { 
-  Client, 
-  GatewayIntentBits, 
-  Partials, 
-  EmbedBuilder, 
-  PermissionsBitField,
-  ApplicationCommandOptionType,
-  CommandInteraction,
-  ChatInputCommandInteraction,
-  GuildMember,
-  Role
-} from 'discord.js';
-import dotenv from 'dotenv';
+import { Client, GatewayIntentBits, Events, GuildMember, Message, PartialGuildMember, SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes } from 'discord.js';
+import { config } from 'dotenv';
+import pkg from 'pg';
+const { Pool } = pkg;
 
 // Load environment variables
-dotenv.config();
+config();
 
-// Define role IDs and their ban durations in milliseconds
-const ROLE_BAN_DURATIONS = {
-  '1312878122005168168': 1000 * 60 * 60 * 24 * 30 * 3,    // 3 months
-  '1312872484546285630': 1000 * 60 * 60 * 24 * 365,        // 1 year
-  '1312877981311565835': 1000 * 60 * 60 * 24 * 365 * 6     // 6 years
+// Configuration
+const CONFIG = {
+    TOKEN: process.env.DISCORD_TOKEN,
+    CLIENT_ID: process.env.CLIENT_ID,
+    
+    // Database configuration
+    DATABASE: {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'honeypot_bot',
+        user: process.env.DB_USER || 'honeypot_user',
+        password: process.env.DB_PASSWORD || 'honeypot_password',
+    },
+    
+    // Honeypot role IDs from environment (comma-separated)
+    HONEYPOT_ROLES: process.env.HONEYPOT_ROLES?.split(',').map(id => id.trim()) || [],
+    
+    // Honeypot channel IDs from environment (comma-separated)
+    HONEYPOT_CHANNELS: process.env.HONEYPOT_CHANNELS?.split(',').map(id => id.trim()) || [],
+    
+    // Role-specific ban durations (in milliseconds)
+    ROLE_BAN_DURATIONS: {
+        // Configure specific durations for each role ID
+        [process.env.ROLE_3_MONTHS || '']: 3 * 30 * 24 * 60 * 60 * 1000, // 3 months
+        [process.env.ROLE_1_YEAR || '']: 365 * 24 * 60 * 60 * 1000, // 1 year
+        [process.env.ROLE_6_YEARS || '']: 6 * 365 * 24 * 60 * 60 * 1000, // 6 years
+    },
+    
+    // Ban reason messages
+    BAN_REASONS: {
+        ROLE: 'Temporarily banned for acquiring honeypot role',
+        CHANNEL: 'Permanently banned for posting in honeypot channel',
+    },
+    
+    // Ban check interval (check every hour for expired bans)
+    BAN_CHECK_INTERVAL: 60 * 60 * 1000, // 1 hour in milliseconds
 };
 
-// Check if testing is enabled
-const TESTING_ENABLED = process.env.TESTING_ENABLED === 'true';
+interface TempBan {
+    id: number;
+    guild_id: string;
+    user_id: string;
+    user_tag: string;
+    role_id: string;
+    banned_at: Date;
+    expires_at: Date;
+    reason: string;
+    active: boolean;
+}
 
-// Initialize Discord client
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: [Partials.Channel] // Needed for DMs
-});
+class HoneypotBot {
+    private client: Client;
+    private db: pkg.Pool;
+    private banCheckInterval?: NodeJS.Timeout;
 
-// Bot ready event
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user?.tag}`);
-  console.log(`Testing mode: ${TESTING_ENABLED ? 'ENABLED' : 'DISABLED'}`);
-  
-  // Register slash commands
-  const guilds = client.guilds.cache;
-  
-  guilds.forEach(async (guild) => {
-    // Always register ping command
-    await guild.commands.create({
-      name: 'ping',
-      description: 'Check the bot\'s latency'
-    });
-    
-    // Register test commands only if testing is enabled
-    if (TESTING_ENABLED) {
-      await guild.commands.create({
-        name: 'testban',
-        description: '[TEST] Manually test the ban system on a user',
-        options: [
-          {
-            name: 'user',
-            description: 'The user to test ban',
-            type: ApplicationCommandOptionType.User,
-            required: true
-          },
-          {
-            name: 'reason',
-            description: 'Reason for the test ban',
-            type: ApplicationCommandOptionType.String,
-            required: false
-          }
-        ]
-      });
-      
-      await guild.commands.create({
-        name: 'checkroles',
-        description: '[TEST] Check what roles a user has and their ban duration',
-        options: [
-          {
-            name: 'user',
-            description: 'The user to check',
-            type: ApplicationCommandOptionType.User,
-            required: true
-          }
-        ]
-      });
+    constructor() {
+        this.client = new Client({
+            intents: [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.MessageContent,
+            ],
+        });
+
+        this.db = new Pool(CONFIG.DATABASE);
+        this.setupEventListeners();
     }
-    
-    console.log(`Commands registered in guild: ${guild.name}`);
-  });
-});
 
-// Listen for role updates (when users get new roles)
-client.on('guildMemberUpdate', async (oldMember, newMember) => {
-  try {
-    // Check if any new roles were added
-    const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
-    
-    if (addedRoles.size > 0) {
-      // Check if any of the added roles require a ban
-      for (const [roleId] of addedRoles) {
-        if (ROLE_BAN_DURATIONS[roleId as keyof typeof ROLE_BAN_DURATIONS]) {
-          console.log(`User ${newMember.user.tag} received bannable role ${roleId}`);
-          await handleAutomaticBan(newMember, `Automatically banned for receiving role: ${addedRoles.get(roleId)?.name}`);
-          break; // Only need to ban once
+    private async initializeDatabase(): Promise<void> {
+        try {
+            // Create temporary bans table
+            await this.db.query(`
+                CREATE TABLE IF NOT EXISTS temp_bans (
+                    id SERIAL PRIMARY KEY,
+                    guild_id VARCHAR(20) NOT NULL,
+                    user_id VARCHAR(20) NOT NULL,
+                    user_tag VARCHAR(100) NOT NULL,
+                    role_id VARCHAR(20),
+                    banned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    reason TEXT NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    UNIQUE(guild_id, user_id, active)
+                );
+            `);
+
+            // Create index for faster queries
+            await this.db.query(`
+                CREATE INDEX IF NOT EXISTS idx_temp_bans_expires 
+                ON temp_bans(expires_at, active) 
+                WHERE active = TRUE;
+            `);
+
+            console.log('✅ Database initialized successfully');
+        } catch (error) {
+            console.error('❌ Failed to initialize database:', error);
+            throw error;
         }
-      }
     }
-  } catch (error) {
-    console.error('Error in guildMemberUpdate:', error);
-  }
+
+    private setupEventListeners(): void {
+        // Bot ready event
+        this.client.once(Events.ClientReady, async () => {
+            console.log(`✅ Bot is ready! Logged in as ${this.client.user?.tag}`);
+            console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_ROLES.length} honeypot roles`);
+            console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels`);
+            
+            // Initialize database
+            await this.initializeDatabase();
+            
+            // Register slash commands
+            await this.registerCommands();
+            
+            // Start ban check interval
+            this.startBanCheckInterval();
+        });
+
+        // Member role update event
+        this.client.on(Events.GuildMemberUpdate, async (oldMember: GuildMember | PartialGuildMember, newMember: GuildMember) => {
+            await this.handleRoleUpdate(oldMember, newMember);
+        });
+
+        // Message creation event
+        this.client.on(Events.MessageCreate, async (message: Message) => {
+            await this.handleMessage(message);
+        });
+
+        // Slash command interaction
+        this.client.on(Events.InteractionCreate, async (interaction) => {
+            if (!interaction.isChatInputCommand()) return;
+            await this.handleSlashCommand(interaction);
+        });
+
+        // Error handling
+        this.client.on('error', (error) => {
+            console.error('❌ Discord client error:', error);
+        });
+
+        process.on('unhandledRejection', (error) => {
+            console.error('❌ Unhandled promise rejection:', error);
+        });
+    }
+
+    private async registerCommands(): Promise<void> {
+        if (!CONFIG.CLIENT_ID) {
+            console.warn('⚠️ CLIENT_ID not provided, slash commands will not be registered');
+            return;
+        }
+
+        const commands = [
+            new SlashCommandBuilder()
+                .setName('ping')
+                .setDescription('Test command to check if the bot is responsive')
+                .toJSON(),
+            new SlashCommandBuilder()
+                .setName('tempbans')
+                .setDescription('Show active temporary bans')
+                .toJSON(),
+            new SlashCommandBuilder()
+                .setName('unban')
+                .setDescription('Manually unban a user')
+                .addStringOption(option =>
+                    option.setName('userid')
+                        .setDescription('User ID to unban')
+                        .setRequired(true))
+                .toJSON(),
+        ];
+
+        try {
+            const rest = new REST().setToken(CONFIG.TOKEN!);
+            
+            console.log('🔄 Started refreshing application (/) commands.');
+
+            await rest.put(
+                Routes.applicationCommands(CONFIG.CLIENT_ID),
+                { body: commands },
+            );
+
+            console.log('✅ Successfully reloaded application (/) commands.');
+        } catch (error) {
+            console.error('❌ Error registering slash commands:', error);
+        }
+    }
+
+    private async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            if (interaction.commandName === 'ping') {
+                const ping = this.client.ws.ping;
+                const activeBans = await this.getActiveTempBansCount();
+                await interaction.reply({
+                    content: `🏓 Pong! Bot latency: ${ping}ms\n` +
+                            `📊 Monitoring:\n` +
+                            `• ${CONFIG.HONEYPOT_ROLES.length} honeypot roles\n` +
+                            `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n` +
+                            `• ${activeBans} active temporary bans`,
+                    ephemeral: true,
+                });
+            } else if (interaction.commandName === 'tempbans') {
+                const bans = await this.getActiveTempBans(interaction.guild!.id);
+                if (bans.length === 0) {
+                    await interaction.reply({ content: '📝 No active temporary bans', ephemeral: true });
+                    return;
+                }
+
+                const banList = bans.slice(0, 10).map((ban, i) => 
+                    `${i + 1}. <@${ban.user_id}> (${ban.user_tag}) - Expires <t:${Math.floor(ban.expires_at.getTime() / 1000)}:R>`
+                ).join('\n');
+
+                await interaction.reply({ 
+                    content: `📝 Active temporary bans (${bans.length}):\n${banList}${bans.length > 10 ? '\n... and more' : ''}`, 
+                    ephemeral: true 
+                });
+            } else if (interaction.commandName === 'unban') {
+                const userId = interaction.options.getString('userid', true);
+                await this.manualUnban(interaction.guild!.id, userId);
+                await interaction.reply({ content: `✅ Attempted to unban user ${userId}`, ephemeral: true });
+            }
+        } catch (error) {
+            console.error('❌ Error handling slash command:', error);
+            await interaction.reply({ content: '❌ An error occurred', ephemeral: true }).catch(() => {});
+        }
+    }
+
+    private async handleRoleUpdate(oldMember: GuildMember | PartialGuildMember, newMember: GuildMember): Promise<void> {
+        try {
+            // Get old and new role IDs
+            const oldRoles = oldMember.roles.cache.map(role => role.id);
+            const newRoles = newMember.roles.cache.map(role => role.id);
+
+            // Find newly added roles
+            const addedRoles = newRoles.filter(roleId => !oldRoles.includes(roleId));
+
+            // Check if any added role is a honeypot role
+            const honeypotRoleAdded = addedRoles.find(roleId => CONFIG.HONEYPOT_ROLES.includes(roleId));
+
+            if (honeypotRoleAdded) {
+                console.log(`🚨 Honeypot role detected for user: ${newMember.user.tag} (${newMember.id})`);
+                await this.tempBanMember(newMember, honeypotRoleAdded);
+            }
+        } catch (error) {
+            console.error('❌ Error handling role update:', error);
+        }
+    }
+
+    private async handleMessage(message: Message): Promise<void> {
+        try {
+            // Ignore bot messages
+            if (message.author.bot) return;
+
+            // Check if message is in a honeypot channel
+            if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) {
+                console.log(`🚨 Message in honeypot channel from user: ${message.author.tag} (${message.author.id})`);
+                
+                // Get the guild member
+                const member = message.guild?.members.cache.get(message.author.id);
+                
+                if (member) {
+                    // Delete the message first
+                    try {
+                        await message.delete();
+                        console.log(`🗑️ Deleted honeypot message from ${message.author.tag}`);
+                    } catch (deleteError) {
+                        console.error('❌ Failed to delete message:', deleteError);
+                    }
+
+                    // Then permanently ban the member
+                    await this.permanentBanMember(member, CONFIG.BAN_REASONS.CHANNEL);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error handling message:', error);
+        }
+    }
+
+    private async tempBanMember(member: GuildMember, roleId: string): Promise<void> {
+        try {
+            // Check if the bot has permission to ban
+            if (!member.guild.members.me?.permissions.has('BanMembers')) {
+                console.error('❌ Bot does not have permission to ban members');
+                return;
+            }
+
+            // Check if the member is bannable
+            if (!member.bannable) {
+                console.error(`❌ Cannot ban ${member.user.tag} - insufficient permissions or higher role`);
+                return;
+            }
+
+            // Get ban duration for this role
+            const banDuration = CONFIG.ROLE_BAN_DURATIONS[roleId];
+            if (!banDuration) {
+                console.error(`❌ No ban duration configured for role ${roleId}`);
+                return;
+            }
+
+            const expiresAt = new Date(Date.now() + banDuration);
+
+            // Ban the member
+            await member.ban({
+                reason: CONFIG.BAN_REASONS.ROLE,
+                deleteMessageSeconds: 86400,
+            });
+
+            // Store in database
+            await this.db.query(`
+                INSERT INTO temp_bans (guild_id, user_id, user_tag, role_id, expires_at, reason)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (guild_id, user_id, active) 
+                DO UPDATE SET expires_at = $5, role_id = $4
+            `, [member.guild.id, member.id, member.user.tag, roleId, expiresAt, CONFIG.BAN_REASONS.ROLE]);
+
+            const durationText = this.formatDuration(banDuration);
+            console.log(`⏱️ Successfully temp banned ${member.user.tag} (${member.id}) for ${durationText} - Role: ${roleId}`);
+
+            // Log the ban
+            await this.logTempBan(member, expiresAt, roleId, CONFIG.BAN_REASONS.ROLE);
+
+        } catch (error) {
+            console.error(`❌ Failed to temp ban ${member.user.tag}:`, error);
+        }
+    }
+
+    private async permanentBanMember(member: GuildMember, reason: string): Promise<void> {
+        try {
+            // Check permissions
+            if (!member.guild.members.me?.permissions.has('BanMembers')) {
+                console.error('❌ Bot does not have permission to ban members');
+                return;
+            }
+
+            if (!member.bannable) {
+                console.error(`❌ Cannot ban ${member.user.tag} - insufficient permissions or higher role`);
+                return;
+            }
+
+            // Ban the member permanently
+            await member.ban({
+                reason: reason,
+                deleteMessageSeconds: 86400,
+            });
+
+            console.log(`🔨 Successfully permanently banned ${member.user.tag} (${member.id}) - Reason: ${reason}`);
+
+            // Log the ban
+            await this.logPermanentBan(member, reason);
+
+        } catch (error) {
+            console.error(`❌ Failed to permanently ban ${member.user.tag}:`, error);
+        }
+    }
+
+    private startBanCheckInterval(): void {
+        this.banCheckInterval = setInterval(async () => {
+            await this.checkExpiredBans();
+        }, CONFIG.BAN_CHECK_INTERVAL);
+
+        console.log(`⏰ Started ban check interval (every ${CONFIG.BAN_CHECK_INTERVAL / 60000} minutes)`);
+    }
+
+    private async checkExpiredBans(): Promise<void> {
+        try {
+            const result = await this.db.query(`
+                SELECT * FROM temp_bans 
+                WHERE active = TRUE AND expires_at <= NOW()
+            `);
+
+            const expiredBans: TempBan[] = result.rows;
+
+            for (const ban of expiredBans) {
+                await this.unbanUser(ban);
+            }
+
+            if (expiredBans.length > 0) {
+                console.log(`✅ Processed ${expiredBans.length} expired bans`);
+            }
+        } catch (error) {
+            console.error('❌ Error checking expired bans:', error);
+        }
+    }
+
+    private async unbanUser(ban: TempBan): Promise<void> {
+        try {
+            const guild = this.client.guilds.cache.get(ban.guild_id);
+            if (!guild) {
+                console.warn(`⚠️ Guild ${ban.guild_id} not found for unban`);
+                return;
+            }
+
+            // Unban the user
+            await guild.members.unban(ban.user_id, 'Temporary ban expired');
+
+            // Mark as inactive in database
+            await this.db.query(`
+                UPDATE temp_bans 
+                SET active = FALSE 
+                WHERE id = $1
+            `, [ban.id]);
+
+            console.log(`✅ Unbanned ${ban.user_tag} (${ban.user_id}) - ban expired`);
+
+            // Log the unban
+            await this.logUnban(guild, ban);
+
+        } catch (error) {
+            console.error(`❌ Failed to unban ${ban.user_tag}:`, error);
+        }
+    }
+
+    private async manualUnban(guildId: string, userId: string): Promise<void> {
+        try {
+            const guild = this.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            await guild.members.unban(userId, 'Manual unban via command');
+
+            // Mark as inactive in database
+            await this.db.query(`
+                UPDATE temp_bans 
+                SET active = FALSE 
+                WHERE guild_id = $1 AND user_id = $2 AND active = TRUE
+            `, [guildId, userId]);
+
+            console.log(`✅ Manually unbanned user ${userId}`);
+        } catch (error) {
+            console.error(`❌ Failed to manually unban ${userId}:`, error);
+        }
+    }
+
+    private async getActiveTempBansCount(): Promise<number> {
+        const result = await this.db.query('SELECT COUNT(*) FROM temp_bans WHERE active = TRUE');
+        return parseInt(result.rows[0].count);
+    }
+
+    private async getActiveTempBans(guildId: string): Promise<TempBan[]> {
+        const result = await this.db.query(`
+            SELECT * FROM temp_bans 
+            WHERE guild_id = $1 AND active = TRUE 
+            ORDER BY expires_at ASC
+        `, [guildId]);
+        return result.rows;
+    }
+
+    private formatDuration(ms: number): string {
+        const years = Math.floor(ms / (365 * 24 * 60 * 60 * 1000));
+        const months = Math.floor((ms % (365 * 24 * 60 * 60 * 1000)) / (30 * 24 * 60 * 60 * 1000));
+        const days = Math.floor((ms % (30 * 24 * 60 * 60 * 1000)) / (24 * 60 * 60 * 1000));
+
+        if (years > 0) return `${years} year${years > 1 ? 's' : ''}`;
+        if (months > 0) return `${months} month${months > 1 ? 's' : ''}`;
+        return `${days} day${days > 1 ? 's' : ''}`;
+    }
+
+    private async logTempBan(member: GuildMember, expiresAt: Date, roleId: string, reason: string): Promise<void> {
+        // Optional logging - uncomment if you want to log to a channel
+        /*
+        const logChannelId = process.env.LOG_CHANNEL_ID;
+        if (!logChannelId) return;
+        
+        const logChannel = member.guild.channels.cache.get(logChannelId);
+        if (logChannel && logChannel.isTextBased()) {
+            await logChannel.send({
+                embeds: [{
+                    title: '⏱️ Automatic Temporary Ban',
+                    color: 0xffa500,
+                    fields: [
+                        { name: 'User', value: `${member.user.tag} (${member.id})`, inline: true },
+                        { name: 'Role ID', value: roleId, inline: true },
+                        { name: 'Expires', value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:F>`, inline: true },
+                        { name: 'Reason', value: reason, inline: false },
+                    ],
+                }],
+            });
+        }
+        */
+    }
+
+    private async logPermanentBan(member: GuildMember, reason: string): Promise<void> {
+        // Optional logging - uncomment if you want to log to a channel
+        /*
+        const logChannelId = process.env.LOG_CHANNEL_ID;
+        if (!logChannelId) return;
+        
+        const logChannel = member.guild.channels.cache.get(logChannelId);
+        if (logChannel && logChannel.isTextBased()) {
+            await logChannel.send({
+                embeds: [{
+                    title: '🔨 Automatic Permanent Ban',
+                    color: 0xff0000,
+                    fields: [
+                        { name: 'User', value: `${member.user.tag} (${member.id})`, inline: true },
+                        { name: 'Reason', value: reason, inline: true },
+                        { name: 'Time', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                    ],
+                }],
+            });
+        }
+        */
+    }
+
+    private async logUnban(guild: any, ban: TempBan): Promise<void> {
+        // Optional logging - uncomment if you want to log to a channel
+        /*
+        const logChannelId = process.env.LOG_CHANNEL_ID;
+        if (!logChannelId) return;
+        
+        const logChannel = guild.channels.cache.get(logChannelId);
+        if (logChannel && logChannel.isTextBased()) {
+            await logChannel.send({
+                embeds: [{
+                    title: '✅ Automatic Unban',
+                    color: 0x00ff00,
+                    fields: [
+                        { name: 'User', value: `${ban.user_tag} (${ban.user_id})`, inline: true },
+                        { name: 'Original Ban', value: `<t:${Math.floor(ban.banned_at.getTime() / 1000)}:F>`, inline: true },
+                        { name: 'Unbanned', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true },
+                    ],
+                }],
+            });
+        }
+        */
+    }
+
+    public async start(): Promise<void> {
+        if (!CONFIG.TOKEN) {
+            console.error('❌ DISCORD_TOKEN not found in environment variables');
+            process.exit(1);
+        }
+
+        try {
+            await this.client.login(CONFIG.TOKEN);
+        } catch (error) {
+            console.error('❌ Failed to login:', error);
+            process.exit(1);
+        }
+    }
+
+    public async stop(): Promise<void> {
+        console.log('🛑 Shutting down bot...');
+        if (this.banCheckInterval) {
+            clearInterval(this.banCheckInterval);
+        }
+        await this.db.end();
+        await this.client.destroy();
+    }
+}
+
+// Initialize and start the bot
+const bot = new HoneypotBot();
+
+// Graceful shutdown handling
+process.on('SIGINT', async () => {
+    await bot.stop();
+    process.exit(0);
 });
 
-// Listen for new members joining (in case they already have the roles)
-client.on('guildMemberAdd', async (member) => {
-  try {
-    // Check if the new member already has any bannable roles
-    const banDuration = getBanDurationFromRoles(member);
-    
-    if (banDuration > 0) {
-      console.log(`New member ${member.user.tag} joined with bannable roles`);
-      await handleAutomaticBan(member, 'Automatically banned for having restricted role upon joining');
-    }
-  } catch (error) {
-    console.error('Error in guildMemberAdd:', error);
-  }
+process.on('SIGTERM', async () => {
+    await bot.stop();
+    process.exit(0);
 });
 
-// Interaction handler for slash commands
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isCommand()) return;
-  
-  const { commandName } = interaction;
-  
-  if (commandName === 'ping') {
-    await handlePingCommand(interaction);
-  } else if (commandName === 'testban' && TESTING_ENABLED) {
-    await handleTestBanCommand(interaction);
-  } else if (commandName === 'checkroles' && TESTING_ENABLED) {
-    await handleCheckRolesCommand(interaction);
-  }
-});
+// Start the bot
+bot.start().catch(console.error);
 
-// Function to handle automatic banning
-async function handleAutomaticBan(member: GuildMember, reason: string) {
-  try {
-    // Check if the member can be banned
-    if (!member.bannable) {
-      console.log(`Cannot ban ${member.user.tag} - insufficient permissions`);
-      return;
-    }
-    
-    // Determine ban duration based on roles
-    const banDuration = getBanDurationFromRoles(member);
-    
-    if (banDuration === 0) {
-      console.log(`No bannable roles found for ${member.user.tag}`);
-      return;
-    }
-    
-    // Calculate unban date
-    const unbanDate = new Date(Date.now() + banDuration);
-    
-    // Create and send DM with embed
-    await sendBanDM(member, reason, unbanDate);
-    
-    // Ban the user
-    await member.ban({ reason: `${reason} | Until: ${unbanDate.toLocaleString()}` });
-    
-    // Log the ban
-    const durationText = formatBanDuration(banDuration);
-    console.log(`Banned ${member.user.tag} for ${durationText}. Reason: ${reason}`);
-    
-    // Set timeout to unban the user
-    setTimeout(async () => {
-      try {
-        await member.guild.members.unban(member.user.id, 'Temporary ban expired');
-        console.log(`Unbanned user ${member.user.tag} (${member.user.id})`);
-      } catch (error) {
-        console.error('Error unbanning user:', error);
-      }
-    }, banDuration);
-    
-  } catch (error) {
-    console.error('Error in automatic ban:', error);
-  }
-}
-
-// Function to handle the test ban command (only available in testing mode)
-async function handleTestBanCommand(interaction: CommandInteraction) {
-  // Check if the user has permission to ban
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers)) {
-    await interaction.reply({ content: 'You do not have permission to ban members!', ephemeral: true });
-    return;
-  }
-  
-  if (!interaction.isChatInputCommand()) return;
-  
-  const targetUser = interaction.options.getUser('user');
-  const reason = interaction.options.getString('reason') || 'Test ban';
-  
-  if (!targetUser) {
-    await interaction.reply({ content: 'Invalid user specified.', ephemeral: true });
-    return;
-  }
-  
-  const guild = interaction.guild;
-  if (!guild) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
-    return;
-  }
-  
-  try {
-    const member = await guild.members.fetch(targetUser.id);
-    
-    await interaction.reply({ content: `Testing ban system on ${targetUser.tag}...`, ephemeral: true });
-    await handleAutomaticBan(member, `[TEST] ${reason}`);
-    
-  } catch (error) {
-    console.error('Error in test ban command:', error);
-    await interaction.reply({
-      content: 'An error occurred while testing the ban system.',
-      ephemeral: true
-    });
-  }
-}
-
-// Function to handle the check roles command (only available in testing mode)
-async function handleCheckRolesCommand(interaction: CommandInteraction) {
-  if (!interaction.isChatInputCommand()) return;
-  
-  const targetUser = interaction.options.getUser('user');
-  
-  if (!targetUser) {
-    await interaction.reply({ content: 'Invalid user specified.', ephemeral: true });
-    return;
-  }
-  
-  const guild = interaction.guild;
-  if (!guild) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
-    return;
-  }
-  
-  try {
-    const member = await guild.members.fetch(targetUser.id);
-    const banDuration = getBanDurationFromRoles(member);
-    
-    const embed = new EmbedBuilder()
-      .setTitle('🔍 Role Check Results')
-      .setColor('#0099FF')
-      .setDescription(`Role analysis for ${targetUser.tag}`)
-      .addFields(
-        { name: 'User', value: `${targetUser.tag} (${targetUser.id})` },
-        { name: 'Total Roles', value: member.roles.cache.size.toString() },
-        { name: 'Ban Duration', value: banDuration > 0 ? formatBanDuration(banDuration) : 'No bannable roles' }
-      );
-    
-    // List bannable roles
-    const bannableRoles: string[] = [];
-    member.roles.cache.forEach((role: Role) => {
-      const duration = ROLE_BAN_DURATIONS[role.id as keyof typeof ROLE_BAN_DURATIONS];
-      if (duration) {
-        bannableRoles.push(`${role.name} (${formatBanDuration(duration)})`);
-      }
-    });
-    
-    if (bannableRoles.length > 0) {
-      embed.addFields({ name: 'Bannable Roles', value: bannableRoles.join('\n') });
-    }
-    
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-    
-  } catch (error) {
-    console.error('Error in check roles command:', error);
-    await interaction.reply({
-      content: 'An error occurred while checking roles.',
-      ephemeral: true
-    });
-  }
-}
-
-// Function to get ban duration based on roles
-function getBanDurationFromRoles(member: GuildMember): number {
-  let maxDuration = 0;
-  
-  // Check each role the member has
-  member.roles.cache.forEach((role: Role) => {
-    const duration = ROLE_BAN_DURATIONS[role.id as keyof typeof ROLE_BAN_DURATIONS];
-    if (duration && duration > maxDuration) {
-      maxDuration = duration;
-    }
-  });
-  
-  return maxDuration;
-}
-
-// Function to handle the ping command
-async function handlePingCommand(interaction: CommandInteraction) {
-  try {
-    // Check if this is a chat input command
-    if (!interaction.isChatInputCommand()) return;
-    
-    // Initial response
-    const initialResponse = await interaction.reply({ 
-      content: '📡 Pinging...',
-      fetchReply: true
-    });
-    
-    // Calculate different latency metrics
-    const apiLatency = Math.round(client.ws.ping); // WebSocket latency
-    
-    // Calculate round-trip latency (time between command and response)
-    const roundTripLatency = initialResponse.createdTimestamp - interaction.createdTimestamp;
-    
-    // Create an embed with the latency information
-    const embed = new EmbedBuilder()
-      .setTitle('🏓 Pong!')
-      .setColor('#00FF00')
-      .addFields(
-        { name: 'API Latency', value: `${apiLatency}ms`, inline: true },
-        { name: 'Round-trip Latency', value: `${roundTripLatency}ms`, inline: true },
-        { name: 'Uptime', value: formatUptime(client.uptime || 0) },
-        { name: 'Testing Mode', value: TESTING_ENABLED ? '✅ Enabled' : '❌ Disabled', inline: true }
-      )
-      .setFooter({ text: 'Bot Status' })
-      .setTimestamp();
-    
-    // Edit the initial response with the embed
-    await interaction.editReply({ content: '', embeds: [embed] });
-  } catch (error) {
-    console.error('Error in ping command:', error);
-    await interaction.reply({
-      content: 'An error occurred while checking latency.',
-      ephemeral: true
-    });
-  }
-}
-
-// Helper function to format uptime
-function formatUptime(uptime: number): string {
-  const seconds = Math.floor(uptime / 1000) % 60;
-  const minutes = Math.floor(uptime / (1000 * 60)) % 60;
-  const hours = Math.floor(uptime / (1000 * 60 * 60)) % 24;
-  const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
-  
-  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
-}
-
-// Function to send a DM with embed to the banned user
-async function sendBanDM(member: GuildMember, reason: string, unbanDate: Date) {
-  try {
-    const embed = new EmbedBuilder()
-      .setTitle('🚫 You have been banned')
-      .setColor('#FF0000')
-      .setDescription(`You have been temporarily banned from ${member.guild.name}`)
-      .addFields(
-        { name: 'Reason', value: reason },
-        { name: 'Ban expires', value: unbanDate.toLocaleString() },
-        { name: 'Appeal Information', value: 'If you think this ban has been in error, you can email mods@transgamers.org' }
-      )
-      .setTimestamp()
-      .setFooter({ text: `${member.guild.name} Moderation` });
-    
-    await member.send({ embeds: [embed] });
-  } catch (error) {
-    console.error('Could not send DM to banned user:', error);
-  }
-}
-
-// Helper function to format ban duration for display
-function formatBanDuration(duration: number): string {
-  const seconds = Math.floor(duration / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(months / 12);
-  
-  if (years > 0) {
-    const remainingMonths = months % 12;
-    if (remainingMonths > 0) {
-      return `${years} year${years !== 1 ? 's' : ''} and ${remainingMonths} month${remainingMonths !== 1 ? 's' : ''}`;
-    } else {
-      return `${years} year${years !== 1 ? 's' : ''}`;
-    }
-  } else if (months > 0) {
-    return `${months} month${months !== 1 ? 's' : ''}`;
-  } else if (days > 0) {
-    return `${days} day${days !== 1 ? 's' : ''}`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours !== 1 ? 's' : ''}`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-  } else {
-    return `${seconds} second${seconds !== 1 ? 's' : ''}`;
-  }
-}
-
-// Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-});
-
-// Login to Discord with the bot token
-client.login(process.env.DISCORD_TOKEN);
+export default HoneypotBot;
