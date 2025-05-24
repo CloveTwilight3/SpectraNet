@@ -5,13 +5,16 @@ WORKDIR /app
 
 # Install dependencies first (for better caching)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source code
 COPY . .
 
 # Build the TypeScript code
 RUN npm run build
+
+# Remove dev dependencies to reduce image size
+RUN npm ci --only=production && npm cache clean --force
 
 # Create logs directory
 RUN mkdir -p logs
