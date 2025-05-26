@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, GuildMember, Message, PartialGuildMember, SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, Events, GuildMember, Message, PartialGuildMember, SlashCommandBuilder, ChatInputCommandInteraction, REST, Routes, EmbedBuilder } from 'discord.js';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
 
@@ -305,6 +305,27 @@ class HoneypotBot {
         }
     }
 
+    private async sendBanDM(member: GuildMember, reason: string): Promise<void> {
+        try {
+            const embed = new EmbedBuilder()
+                .setTitle('You were banned from TransGamers')
+                .setDescription('If you feel this ban was in error, please send an email to **appeals@transgamers.org** to appeal your ban')
+                .addFields({
+                    name: 'Reason:',
+                    value: reason,
+                    inline: false
+                })
+                .setColor(0xFFD6E4) // Red color
+                .setTimestamp();
+
+            await member.send({ embeds: [embed] });
+            console.log(`📧 Successfully sent ban DM to ${member.user.tag}`);
+        } catch (error) {
+            console.warn(`⚠️ Failed to send ban DM to ${member.user.tag}:`, error);
+            // Don't throw error - DM failure shouldn't prevent the ban
+        }
+    }
+
     private async timeoutMember(member: GuildMember, roleId: string, duration: number): Promise<void> {
         try {
             // Check if the bot has permission to timeout members
@@ -347,6 +368,9 @@ class HoneypotBot {
                 return;
             }
 
+            // Send DM before banning
+            await this.sendBanDM(member, CONFIG.BAN_REASONS.ROLE_TEMPBAN);
+
             // Ban the member
             await member.ban({
                 reason: CONFIG.BAN_REASONS.ROLE_TEMPBAN,
@@ -381,6 +405,9 @@ class HoneypotBot {
                 console.error(`❌ Cannot ban ${member.user.tag} - insufficient permissions or higher role`);
                 return;
             }
+
+            // Send DM before banning
+            await this.sendBanDM(member, reason);
 
             // Ban the member permanently
             await member.ban({
