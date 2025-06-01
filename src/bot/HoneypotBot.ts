@@ -114,6 +114,3 @@ export class HoneypotBot {
         await this.client.destroy();
     }
 }
-
-// Export the class as default
-export { HoneypotBot };
