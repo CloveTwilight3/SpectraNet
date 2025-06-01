@@ -132,7 +132,7 @@ export class CommandHandler {
                     { name: 'User ID', value: uuid, inline: true },
                     { name: 'In Server', value: member ? '✅ Yes' : '❌ No', inline: true }
                 )
-                .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+                .setThumbnail(user.displayAvatarURL({ size: 256 }))
                 .setColor(0x00AE86)
                 .setTimestamp()
                 .setFooter({ text: `Requested by ${interaction.user.username}` });

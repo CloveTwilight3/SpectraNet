@@ -52,3 +52,6 @@ export const CONFIG = {
     // Optional: Logging Channel ID
     LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID,
 };
+
+// Export individual parts if needed
+export default CONFIG;
