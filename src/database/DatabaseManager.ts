@@ -15,16 +15,16 @@ export interface TempBan {
 }
 
 export interface UserXP {
-    id?: number;
+    id: number;
     user_id: string;
     guild_id: string;
     xp: number;
     level: number;
     total_messages: number;
     last_message_at: Date;
-    last_xp_gain?: Date;
-    created_at?: Date;
-    updated_at?: Date;
+    last_xp_gain: Date;
+    created_at: Date;
+    updated_at: Date;
 }
 
 export interface LevelRole {
