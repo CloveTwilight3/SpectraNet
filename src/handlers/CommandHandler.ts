@@ -653,3 +653,4 @@ export class CommandHandler {
         const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
         return `[${progressBar}] ${percentage.toFixed(1)}%`;
     }
+}
