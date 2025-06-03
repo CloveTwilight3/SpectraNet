@@ -5,6 +5,7 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { CommandHandler } from '../handlers/CommandHandler';
 import { EventHandler } from '../handlers/EventHandler';
 import { ModerationService } from '../services/ModerationService';
+import { ManualUnbanService } from '../services/ManualUnbanService';
 import { UnbanService } from '../services/UnbanService';
 import { XPService } from '../services/XPService';
 import { commands } from '../commands';
@@ -15,6 +16,7 @@ export class HoneypotBot {
     private commandHandler: CommandHandler;
     private eventHandler: EventHandler;
     private moderationService: ModerationService;
+    private manualUnbanService: ManualUnbanService;
     private unbanService: UnbanService;
     private xpService: XPService;
 
@@ -31,8 +33,9 @@ export class HoneypotBot {
         // Initialize services
         this.database = new DatabaseManager();
         this.moderationService = new ModerationService(this.database);
+        this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
-        this.commandHandler = new CommandHandler(this.client, this.database);
+        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
 
@@ -46,6 +49,7 @@ export class HoneypotBot {
             console.log(`🔍 Monitoring ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles`);
             console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels`);
             console.log(`✨ XP system enabled`);
+            console.log(`⏳ Ban delay system enabled (10 minute onboarding window)`);
             
             // Initialize database
             await this.database.initialize();
@@ -114,8 +118,18 @@ export class HoneypotBot {
     public async stop(): Promise<void> {
         console.log('🛑 Shutting down bot...');
         
+        // Stop services in proper order
         this.unbanService.stop();
+        
+        // Clean up pending bans
+        this.moderationService.cleanup();
+        
+        // Close database connection
         await this.database.close();
+        
+        // Destroy Discord client
         await this.client.destroy();
+        
+        console.log('✅ Bot shut down successfully');
     }
 }

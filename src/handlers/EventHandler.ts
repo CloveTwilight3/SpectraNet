@@ -44,12 +44,21 @@ export class EventHandler {
 
             // Find newly added roles
             const addedRoles = newRoles.filter(roleId => !oldRoles.includes(roleId));
+            // Find removed roles
+            const removedRoles = oldRoles.filter(roleId => !newRoles.includes(roleId));
+
+            // Check if any removed role was a honeypot role (cancel pending ban)
+            const honeypotRoleRemoved = removedRoles.find(roleId => CONFIG.HONEYPOT_ROLES[roleId]);
+            if (honeypotRoleRemoved) {
+                console.log(`✅ Honeypot role removed from user: ${newMember.user.tag} (${newMember.id}) - Role: ${honeypotRoleRemoved}`);
+                // Cancel any pending ban for this user
+                this.moderationService.cancelPendingBan(newMember.user.id, newMember.guild.id);
+            }
 
             // Check if any added role is a honeypot role
             const honeypotRoleAdded = addedRoles.find(roleId => CONFIG.HONEYPOT_ROLES[roleId]);
-
             if (honeypotRoleAdded) {
-                console.log(`🚨 Honeypot role detected for user: ${newMember.user.tag} (${newMember.id})`);
+                console.log(`🚨 Honeypot role detected for user: ${newMember.user.tag} (${newMember.id}) - Role: ${honeypotRoleAdded}`);
                 const roleConfig = CONFIG.HONEYPOT_ROLES[honeypotRoleAdded];
                 
                 if (roleConfig.type === 'timeout') {
@@ -100,7 +109,7 @@ export class EventHandler {
                         console.error('❌ Failed to delete message:', deleteError);
                     }
 
-                    // Then permanently ban the member
+                    // Then permanently ban the member (honeypot channels are immediate bans)
                     await this.moderationService.banMember(member, CONFIG.BAN_REASONS.CHANNEL);
                 }
             }

@@ -2,19 +2,27 @@
 import { ChatInputCommandInteraction, EmbedBuilder, User, GuildMember } from 'discord.js';
 import { CONFIG } from '../config';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { ModerationService } from '../services/ModerationService';
+import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
 
 export class CommandHandler {
     private xpService: XPService;
+    private unbanService: ManualUnbanService;
 
-    constructor(private client: any, private database: DatabaseManager) {
+    constructor(
+        private client: any, 
+        private database: DatabaseManager,
+        private moderationService: ModerationService
+    ) {
         this.xpService = new XPService(database);
+        this.unbanService = new ManualUnbanService(database, moderationService);
     }
 
     async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
         try {
             switch (interaction.commandName) {
-                // Existing commands
+                // Basic commands
                 case 'ping':
                     await this.handlePingCommand(interaction);
                     break;
@@ -23,6 +31,20 @@ export class CommandHandler {
                     break;
                 case 'userinfo':
                     await this.handleUserInfoCommand(interaction);
+                    break;
+                    
+                // Honeypot management commands
+                case 'pendingbans':
+                    await this.handlePendingBansCommand(interaction);
+                    break;
+                case 'unban':
+                    await this.handleUnbanCommand(interaction);
+                    break;
+                case 'removehoneypot':
+                    await this.handleRemoveHoneypotCommand(interaction);
+                    break;
+                case 'cleantempbans':
+                    await this.handleCleanTempBansCommand(interaction);
                     break;
 
                 // XP COMMANDS
@@ -62,12 +84,16 @@ export class CommandHandler {
             .map(([roleId, config]) => `<@&${roleId}>: ${Math.round(config.duration / (24 * 60 * 60 * 1000))}d (${config.type})`)
             .join('\n');
 
+        const pendingBansCount = this.moderationService.getPendingBans(interaction.guildId!).length;
+
         await interaction.reply({
             content: `🏓 Pong! Bot latency: ${ping}ms\n` +
                     `📊 Monitoring:\n` +
                     `• ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles\n` +
-                    `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n\n` +
-                    `⚙️ Role Configurations:\n${roleConfigs || 'None configured'}`,
+                    `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n` +
+                    `• ${pendingBansCount} pending bans\n\n` +
+                    `⚙️ Role Configurations:\n${roleConfigs || 'None configured'}\n\n` +
+                    `⏳ Ban Delay: 10 minute onboarding window`,
             ephemeral: true,
         });
     }
@@ -98,6 +124,192 @@ export class CommandHandler {
             await interaction.reply({
                 content: '❌ Error retrieving temporary bans.',
                 ephemeral: true,
+            });
+        }
+    }
+
+    private async handlePendingBansCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            const pendingBans = this.moderationService.getPendingBans(interaction.guildId!);
+
+            if (pendingBans.length === 0) {
+                await interaction.reply({
+                    content: '✅ No pending bans found.',
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            const pendingList = pendingBans.map(ban => {
+                const scheduledTimestamp = Math.floor(ban.scheduledAt.getTime() / 1000);
+                const joinedTimestamp = Math.floor(ban.memberJoinedAt.getTime() / 1000);
+                return `<@${ban.userId}> - ${ban.type} scheduled <t:${scheduledTimestamp}:R>\n` +
+                       `  └ Joined: <t:${joinedTimestamp}:R> | Role: <@&${ban.roleId}>`;
+            }).join('\n\n');
+
+            const embed = new EmbedBuilder()
+                .setTitle('⏳ Pending Honeypot Bans')
+                .setDescription(pendingList)
+                .setColor(0xFFA500)
+                .addFields({
+                    name: 'ℹ️ Info',
+                    value: 'These users got honeypot roles during their onboarding window (first 10 minutes). ' +
+                           'They will be automatically banned unless they remove the role.',
+                    inline: false
+                })
+                .setTimestamp()
+                .setFooter({ text: `${pendingBans.length} pending ban(s)` });
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        } catch (error) {
+            console.error('❌ Error handling pendingbans command:', error);
+            await interaction.reply({
+                content: '❌ Error retrieving pending bans.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleUnbanCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const userInput = interaction.options.getString('user', true);
+        const reason = interaction.options.getString('reason') || 'Manual unban by moderator';
+
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            const { userId, user } = await this.unbanService.parseUserInput(interaction.guild!, userInput);
+            
+            const result = await this.unbanService.unbanUser(
+                interaction.guild!,
+                userId,
+                interaction.user.id,
+                reason
+            );
+
+            if (!result.success) {
+                await interaction.editReply({
+                    content: `❌ Failed to unban user: ${result.error}`,
+                });
+                return;
+            }
+
+            const userName = user?.tag || `User ID: ${userId}`;
+            
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Manual Unban Completed')
+                .setDescription(`Successfully processed unban for **${userName}**`)
+                .addFields(
+                    { name: 'Discord Unban', value: result.wasActuallyBanned ? '✅ Unbanned' : '⚠️ Not banned', inline: true },
+                    { name: 'Database Cleanup', value: result.removedFromDatabase ? '✅ Removed' : '⚠️ No records', inline: true },
+                    { name: 'Pending Ban', value: result.cancelledPendingBan ? '✅ Cancelled' : '⚠️ None pending', inline: true },
+                    { name: 'Honeypot Roles', value: result.removedRoles.length > 0 ? `✅ Removed ${result.removedRoles.length} role(s)` : '⚠️ None found', inline: true },
+                    { name: 'Reason', value: reason, inline: false }
+                )
+                .setColor(0x00FF00)
+                .setTimestamp()
+                .setFooter({ text: `Action by ${interaction.user.username}` });
+
+            await interaction.editReply({ embeds: [embed] });
+
+            console.log(`🔓 Manual unban completed for ${userName} by ${interaction.user.tag}`);
+
+        } catch (error: any) {
+            console.error('❌ Error in unban command:', error);
+            await interaction.editReply({
+                content: `❌ Error processing unban: ${error.message}`,
+            });
+        }
+    }
+
+    private async handleRemoveHoneypotCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const targetUser = interaction.options.getUser('user', true);
+        const specificRole = interaction.options.getRole('role');
+
+        try {
+            const member = await interaction.guild!.members.fetch(targetUser.id);
+            
+            let removedRoles: string[];
+            
+            if (specificRole) {
+                // Remove specific role
+                const success = await this.unbanService.removeSpecificHoneypotRole(member, specificRole.id);
+                removedRoles = success ? [specificRole.id] : [];
+            } else {
+                // Remove all honeypot roles
+                removedRoles = await this.unbanService.removeHoneypotRoles(member);
+            }
+
+            if (removedRoles.length === 0) {
+                await interaction.reply({
+                    content: `⚠️ ${targetUser.tag} doesn't have any${specificRole ? ` ${specificRole.name}` : ''} honeypot roles.`,
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            const rolesList = removedRoles.map(roleId => `<@&${roleId}>`).join(', ');
+            
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Honeypot Roles Removed')
+                .setDescription(`Successfully removed honeypot roles from **${targetUser.tag}**`)
+                .addFields(
+                    { name: 'User', value: targetUser.toString(), inline: true },
+                    { name: 'Roles Removed', value: rolesList, inline: true },
+                    { name: 'Pending Ban', value: 'Automatically cancelled', inline: true }
+                )
+                .setColor(0x00FF00)
+                .setTimestamp()
+                .setFooter({ text: `Action by ${interaction.user.username}` });
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+
+            console.log(`➖ Removed honeypot roles from ${targetUser.tag} by ${interaction.user.tag}`);
+
+        } catch (error: any) {
+            console.error('❌ Error removing honeypot roles:', error);
+            
+            if (error.message.includes('not configured as a honeypot role')) {
+                await interaction.reply({
+                    content: `❌ The specified role is not configured as a honeypot role.`,
+                    ephemeral: true,
+                });
+            } else if (error.message.includes('Unknown Member')) {
+                await interaction.reply({
+                    content: `❌ User ${targetUser.tag} is not in this server.`,
+                    ephemeral: true,
+                });
+            } else {
+                await interaction.reply({
+                    content: `❌ Error removing honeypot roles: ${error.message}`,
+                    ephemeral: true,
+                });
+            }
+        }
+    }
+
+    private async handleCleanTempBansCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            const result = await this.unbanService.cleanupExpiredBans(interaction.guild!);
+
+            if (result.errors.length > 0) {
+                await interaction.editReply({
+                    content: `⚠️ Cleanup completed with errors:\n• Cleaned: ${result.cleaned} records\n• Errors: ${result.errors.join(', ')}`,
+                });
+            } else {
+                await interaction.editReply({
+                    content: `✅ Successfully cleaned up **${result.cleaned}** expired ban records from the database.`,
+                });
+            }
+
+            console.log(`🧹 Temp bans cleanup completed by ${interaction.user.tag}: ${result.cleaned} cleaned`);
+
+        } catch (error: any) {
+            console.error('❌ Error in clean temp bans command:', error);
+            await interaction.editReply({
+                content: `❌ Error during cleanup: ${error.message}`,
             });
         }
     }
@@ -441,4 +653,3 @@ export class CommandHandler {
         const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
         return `[${progressBar}] ${percentage.toFixed(1)}%`;
     }
-}

@@ -1,109 +1,122 @@
 // src/database/DatabaseManager.ts
 import { Pool } from 'pg';
 import { CONFIG } from '../config';
-import { TempBan, UserXP, LevelRole, LeaderboardEntry } from '../types';
+
+export interface TempBan {
+    id: number;
+    user_id: string;
+    guild_id: string;
+    role_id: string;
+    unban_at: Date;
+    reason: string;
+    active: boolean;
+    created_at: Date;
+}
+
+export interface UserXP {
+    user_id: string;
+    guild_id: string;
+    xp: number;
+    level: number;
+    total_messages: number;
+    last_message_at: Date;
+}
+
+export interface LevelRole {
+    guild_id: string;
+    level: number;
+    role_id: string;
+    created_at: Date;
+}
 
 export class DatabaseManager {
     private pool: Pool;
 
     constructor() {
         this.pool = new Pool({
-            host: CONFIG.DATABASE.HOST,
-            port: CONFIG.DATABASE.PORT,
-            database: CONFIG.DATABASE.NAME,
-            user: CONFIG.DATABASE.USER,
-            password: CONFIG.DATABASE.PASSWORD,
+            connectionString: CONFIG.DATABASE_URL,
+            ssl: CONFIG.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         });
     }
 
     async initialize(): Promise<void> {
         try {
-            // Create temp_bans table if it doesn't exist
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS temp_bans (
-                    id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    role_id VARCHAR(20),
-                    banned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    unban_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    reason TEXT,
-                    active BOOLEAN DEFAULT true,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                );
-            `);
+            // Test connection
+            await this.pool.query('SELECT NOW()');
+            console.log('✅ Database connected successfully');
 
-            // Create XP system tables
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS user_xp (
-                    id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(20) NOT NULL,
-                    guild_id VARCHAR(20) NOT NULL,
-                    xp BIGINT DEFAULT 0,
-                    level INTEGER DEFAULT 0,
-                    total_messages INTEGER DEFAULT 0,
-                    last_xp_gain TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    UNIQUE(user_id, guild_id)
-                );
-            `);
-
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS level_roles (
-                    id SERIAL PRIMARY KEY,
-                    guild_id VARCHAR(20) NOT NULL,
-                    level INTEGER NOT NULL,
-                    role_id VARCHAR(20) NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    UNIQUE(guild_id, level, role_id)
-                );
-            `);
-
-            // Create indexes for better performance
-            await this.pool.query(`
-                CREATE INDEX IF NOT EXISTS idx_temp_bans_active_unban 
-                ON temp_bans (active, unban_at) 
-                WHERE active = true;
-            `);
-
-            await this.pool.query(`
-                CREATE INDEX IF NOT EXISTS idx_user_xp_guild_level 
-                ON user_xp (guild_id, level DESC);
-            `);
-
-            await this.pool.query(`
-                CREATE INDEX IF NOT EXISTS idx_user_xp_user_guild 
-                ON user_xp (user_id, guild_id);
-            `);
-
-            await this.pool.query(`
-                CREATE INDEX IF NOT EXISTS idx_level_roles_guild_level 
-                ON level_roles (guild_id, level);
-            `);
-
-            console.log('✅ Database initialized successfully');
+            // Create tables if they don't exist
+            await this.createTables();
+            console.log('✅ Database tables verified');
         } catch (error) {
-            console.error('❌ Failed to initialize database:', error);
+            console.error('❌ Database connection failed:', error);
             throw error;
         }
     }
 
-    // TEMP BAN METHODS
+    private async createTables(): Promise<void> {
+        // Create temp_bans table
+        await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS temp_bans (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(20) NOT NULL,
+                guild_id VARCHAR(20) NOT NULL,
+                role_id VARCHAR(20) NOT NULL,
+                unban_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                reason TEXT NOT NULL,
+                active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        `);
+
+        // Create index for temp_bans
+        await this.pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_temp_bans_active_unban 
+            ON temp_bans (active, unban_at) 
+            WHERE active = true
+        `);
+
+        // Create user_xp table
+        await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS user_xp (
+                user_id VARCHAR(20) NOT NULL,
+                guild_id VARCHAR(20) NOT NULL,
+                xp INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 1,
+                total_messages INTEGER DEFAULT 0,
+                last_message_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                PRIMARY KEY (user_id, guild_id)
+            )
+        `);
+
+        // Create level_roles table
+        await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS level_roles (
+                guild_id VARCHAR(20) NOT NULL,
+                level INTEGER NOT NULL,
+                role_id VARCHAR(20) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                PRIMARY KEY (guild_id, level, role_id)
+            )
+        `);
+
+        console.log('✅ Database tables created/verified');
+    }
+
+    // ==================== TEMP BAN METHODS ====================
+    
     async addTempBan(userId: string, guildId: string, roleId: string, unbanAt: Date, reason: string): Promise<void> {
         await this.pool.query(`
-            INSERT INTO temp_bans (user_id, guild_id, role_id, unban_at, reason, active)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO temp_bans (user_id, guild_id, role_id, unban_at, reason)
+            VALUES ($1, $2, $3, $4, $5)
         `, [userId, guildId, roleId, unbanAt, reason]);
     }
 
     async getActiveTempBans(guildId: string): Promise<TempBan[]> {
         const result = await this.pool.query(`
-            SELECT user_id, role_id, banned_at, unban_at, reason 
-            FROM temp_bans 
+            SELECT * FROM temp_bans 
             WHERE guild_id = $1 AND active = true 
-            ORDER BY unban_at ASC 
-            LIMIT 10
+            ORDER BY unban_at ASC
         `, [guildId]);
 
         return result.rows;
@@ -113,6 +126,7 @@ export class DatabaseManager {
         const result = await this.pool.query(`
             SELECT * FROM temp_bans 
             WHERE active = true AND unban_at <= NOW()
+            ORDER BY unban_at ASC
         `);
 
         return result.rows;
@@ -126,7 +140,49 @@ export class DatabaseManager {
         `, [banId]);
     }
 
-    // XP SYSTEM METHODS
+    async deactivateBanByUser(userId: string, guildId: string): Promise<number> {
+        const result = await this.pool.query(`
+            UPDATE temp_bans 
+            SET active = false 
+            WHERE user_id = $1 AND guild_id = $2 AND active = true
+        `, [userId, guildId]);
+
+        return result.rowCount || 0;
+    }
+
+    async getTempBanByUser(userId: string, guildId: string): Promise<TempBan | null> {
+        const result = await this.pool.query(`
+            SELECT * FROM temp_bans 
+            WHERE user_id = $1 AND guild_id = $2 AND active = true
+            ORDER BY created_at DESC
+            LIMIT 1
+        `, [userId, guildId]);
+
+        return result.rows[0] || null;
+    }
+
+    async getAllTempBans(guildId: string): Promise<TempBan[]> {
+        const result = await this.pool.query(`
+            SELECT * FROM temp_bans 
+            WHERE guild_id = $1 AND active = true
+            ORDER BY unban_at ASC
+        `, [guildId]);
+
+        return result.rows;
+    }
+
+    async cleanupExpiredBans(guildId: string): Promise<number> {
+        const result = await this.pool.query(`
+            UPDATE temp_bans 
+            SET active = false 
+            WHERE guild_id = $1 AND active = true AND unban_at <= NOW()
+        `, [guildId]);
+
+        return result.rowCount || 0;
+    }
+
+    // ==================== XP SYSTEM METHODS ====================
+
     async getUserXP(userId: string, guildId: string): Promise<UserXP | null> {
         const result = await this.pool.query(`
             SELECT * FROM user_xp 
@@ -138,49 +194,30 @@ export class DatabaseManager {
 
     async addUserXP(userId: string, guildId: string, xpAmount: number): Promise<UserXP> {
         const result = await this.pool.query(`
-            INSERT INTO user_xp (user_id, guild_id, xp, total_messages, last_xp_gain)
+            INSERT INTO user_xp (user_id, guild_id, xp, total_messages, last_message_at)
             VALUES ($1, $2, $3, 1, NOW())
             ON CONFLICT (user_id, guild_id)
-            DO UPDATE SET
+            DO UPDATE SET 
                 xp = user_xp.xp + $3,
                 total_messages = user_xp.total_messages + 1,
-                last_xp_gain = NOW(),
-                updated_at = NOW()
+                last_message_at = NOW()
             RETURNING *
         `, [userId, guildId, xpAmount]);
 
-        // Update level separately to trigger our function
-        const newXP = result.rows[0].xp;
-        const newLevel = Math.floor(Math.sqrt(newXP / 100));
-        
+        return result.rows[0];
+    }
+
+    async updateUserLevel(userId: string, guildId: string, newLevel: number): Promise<void> {
         await this.pool.query(`
             UPDATE user_xp 
-            SET level = $1 
-            WHERE user_id = $2 AND guild_id = $3
-        `, [newLevel, userId, guildId]);
-
-        return { ...result.rows[0], level: newLevel };
-    }
-
-    async getLastXPGain(userId: string, guildId: string): Promise<Date | null> {
-        const result = await this.pool.query(`
-            SELECT last_xp_gain FROM user_xp 
+            SET level = $3 
             WHERE user_id = $1 AND guild_id = $2
-        `, [userId, guildId]);
-
-        return result.rows[0]?.last_xp_gain || null;
+        `, [userId, guildId, newLevel]);
     }
 
-    async getXPLeaderboard(guildId: string, limit: number = 10): Promise<LeaderboardEntry[]> {
+    async getXPLeaderboard(guildId: string, limit: number = 10): Promise<UserXP[]> {
         const result = await this.pool.query(`
-            SELECT 
-                user_id,
-                guild_id,
-                xp,
-                level,
-                total_messages,
-                ROW_NUMBER() OVER (ORDER BY xp DESC) as rank
-            FROM user_xp 
+            SELECT * FROM user_xp 
             WHERE guild_id = $1 
             ORDER BY xp DESC 
             LIMIT $2
@@ -189,15 +226,20 @@ export class DatabaseManager {
         return result.rows;
     }
 
-    async getLevelRoles(guildId: string, level: number): Promise<LevelRole[]> {
+    async getUserRank(userId: string, guildId: string): Promise<number> {
         const result = await this.pool.query(`
-            SELECT * FROM level_roles 
-            WHERE guild_id = $1 AND level <= $2
-            ORDER BY level DESC
-        `, [guildId, level]);
+            SELECT COUNT(*) + 1 as rank
+            FROM user_xp 
+            WHERE guild_id = $2 AND xp > (
+                SELECT xp FROM user_xp 
+                WHERE user_id = $1 AND guild_id = $2
+            )
+        `, [userId, guildId]);
 
-        return result.rows;
+        return parseInt(result.rows[0]?.rank || '0');
     }
+
+    // ==================== LEVEL ROLES METHODS ====================
 
     async addLevelRole(guildId: string, level: number, roleId: string): Promise<void> {
         await this.pool.query(`
@@ -216,17 +258,128 @@ export class DatabaseManager {
         return (result.rowCount || 0) > 0;
     }
 
+    async getLevelRoles(guildId: string, level: number): Promise<LevelRole[]> {
+        const result = await this.pool.query(`
+            SELECT * FROM level_roles 
+            WHERE guild_id = $1 AND level = $2
+            ORDER BY created_at ASC
+        `, [guildId, level]);
+
+        return result.rows;
+    }
+
     async getAllLevelRoles(guildId: string): Promise<LevelRole[]> {
         const result = await this.pool.query(`
             SELECT * FROM level_roles 
             WHERE guild_id = $1 
-            ORDER BY level ASC
+            ORDER BY level ASC, created_at ASC
         `, [guildId]);
 
         return result.rows;
     }
 
+    async getUserEligibleRoles(guildId: string, userLevel: number): Promise<LevelRole[]> {
+        const result = await this.pool.query(`
+            SELECT * FROM level_roles 
+            WHERE guild_id = $1 AND level <= $2
+            ORDER BY level ASC
+        `, [guildId, userLevel]);
+
+        return result.rows;
+    }
+
+    // ==================== UTILITY METHODS ====================
+
+    async getStats(guildId: string): Promise<{
+        totalUsers: number;
+        totalXP: number;
+        averageLevel: number;
+        activeBans: number;
+    }> {
+        const userStats = await this.pool.query(`
+            SELECT 
+                COUNT(*) as total_users,
+                COALESCE(SUM(xp), 0) as total_xp,
+                COALESCE(AVG(level), 0) as average_level
+            FROM user_xp 
+            WHERE guild_id = $1
+        `, [guildId]);
+
+        const banStats = await this.pool.query(`
+            SELECT COUNT(*) as active_bans
+            FROM temp_bans 
+            WHERE guild_id = $1 AND active = true
+        `, [guildId]);
+
+        return {
+            totalUsers: parseInt(userStats.rows[0]?.total_users || '0'),
+            totalXP: parseInt(userStats.rows[0]?.total_xp || '0'),
+            averageLevel: parseFloat(userStats.rows[0]?.average_level || '0'),
+            activeBans: parseInt(banStats.rows[0]?.active_bans || '0')
+        };
+    }
+
+    async cleanupOldData(daysOld: number = 90): Promise<{
+        expiredBans: number;
+        inactiveUsers: number;
+    }> {
+        // Clean up old expired bans
+        const expiredBansResult = await this.pool.query(`
+            DELETE FROM temp_bans 
+            WHERE active = false AND created_at < NOW() - INTERVAL '${daysOld} days'
+        `);
+
+        // Clean up very old inactive users (no messages in X days)
+        const inactiveUsersResult = await this.pool.query(`
+            DELETE FROM user_xp 
+            WHERE last_message_at < NOW() - INTERVAL '${daysOld} days' AND total_messages < 5
+        `);
+
+        return {
+            expiredBans: expiredBansResult.rowCount || 0,
+            inactiveUsers: inactiveUsersResult.rowCount || 0
+        };
+    }
+
+    // ==================== CONNECTION MANAGEMENT ====================
+
+    async testConnection(): Promise<boolean> {
+        try {
+            await this.pool.query('SELECT 1');
+            return true;
+        } catch (error) {
+            console.error('❌ Database connection test failed:', error);
+            return false;
+        }
+    }
+
     async close(): Promise<void> {
-        await this.pool.end();
+        try {
+            await this.pool.end();
+            console.log('✅ Database connection closed');
+        } catch (error) {
+            console.error('❌ Error closing database connection:', error);
+        }
+    }
+
+    // ==================== MIGRATION HELPERS ====================
+
+    async runMigration(sql: string, description: string): Promise<void> {
+        try {
+            await this.pool.query(sql);
+            console.log(`✅ Migration completed: ${description}`);
+        } catch (error) {
+            console.error(`❌ Migration failed (${description}):`, error);
+            throw error;
+        }
+    }
+
+    async backupTable(tableName: string): Promise<void> {
+        const backupTableName = `${tableName}_backup_${Date.now()}`;
+        await this.pool.query(`
+            CREATE TABLE ${backupTableName} AS 
+            SELECT * FROM ${tableName}
+        `);
+        console.log(`✅ Table ${tableName} backed up to ${backupTableName}`);
     }
 }

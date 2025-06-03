@@ -2,7 +2,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 export const commands = [
-    // Existing commands
+    // Basic commands
     new SlashCommandBuilder()
         .setName('ping')
         .setDescription('Test command to check if the bot is responsive')
@@ -18,6 +18,47 @@ export const commands = [
             option.setName('user')
                 .setDescription('User mention (@user) or User ID (e.g., 123456789012345678)')
                 .setRequired(true))
+        .toJSON(),
+
+    // Honeypot management commands
+    new SlashCommandBuilder()
+        .setName('pendingbans')
+        .setDescription('View pending honeypot bans (delayed due to onboarding)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('unban')
+        .setDescription('Manually unban a user and remove from database')
+        .addStringOption(option =>
+            option.setName('user')
+                .setDescription('User ID or mention to unban')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('Reason for manual unban')
+                .setRequired(false))
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('removehoneypot')
+        .setDescription('Remove honeypot role from user and cancel pending bans')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('User to remove honeypot role from')
+                .setRequired(true))
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('Specific honeypot role to remove (optional)')
+                .setRequired(false))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('cleantempbans')
+        .setDescription('Clean up expired/invalid temp bans from database')
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
         .toJSON(),
 
     // XP SYSTEM COMMANDS
