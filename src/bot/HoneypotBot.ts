@@ -1,3 +1,4 @@
+// src/bot/HoneypotBot.ts
 import { Client, GatewayIntentBits, Events, REST, Routes } from 'discord.js';
 import { CONFIG } from '../config';
 import { DatabaseManager } from '../database/DatabaseManager';
@@ -5,6 +6,7 @@ import { CommandHandler } from '../handlers/CommandHandler';
 import { EventHandler } from '../handlers/EventHandler';
 import { ModerationService } from '../services/ModerationService';
 import { UnbanService } from '../services/UnbanService';
+import { XPService } from '../services/XPService';
 import { commands } from '../commands';
 
 export class HoneypotBot {
@@ -14,6 +16,7 @@ export class HoneypotBot {
     private eventHandler: EventHandler;
     private moderationService: ModerationService;
     private unbanService: UnbanService;
+    private xpService: XPService;
 
     constructor() {
         this.client = new Client({
@@ -28,8 +31,9 @@ export class HoneypotBot {
         // Initialize services
         this.database = new DatabaseManager();
         this.moderationService = new ModerationService(this.database);
+        this.xpService = new XPService(this.database);
         this.commandHandler = new CommandHandler(this.client, this.database);
-        this.eventHandler = new EventHandler(this.moderationService);
+        this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
 
         this.setupEventListeners();
@@ -41,6 +45,7 @@ export class HoneypotBot {
             console.log(`✅ Bot is ready! Logged in as ${this.client.user?.tag}`);
             console.log(`🔍 Monitoring ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles`);
             console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels`);
+            console.log(`✨ XP system enabled`);
             
             // Initialize database
             await this.database.initialize();

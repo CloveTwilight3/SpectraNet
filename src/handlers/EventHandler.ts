@@ -1,9 +1,15 @@
+// src/handlers/EventHandler.ts
 import { Events, GuildMember, PartialGuildMember, Message } from 'discord.js';
 import { CONFIG } from '../config';
 import { ModerationService } from '../services/ModerationService';
+import { XPService } from '../services/XPService';
 
 export class EventHandler {
-    constructor(private moderationService: ModerationService) {}
+    private xpService: XPService;
+
+    constructor(private moderationService: ModerationService, xpService: XPService) {
+        this.xpService = xpService;
+    }
 
     setupEventListeners(client: any): void {
         // Member role update event
@@ -11,8 +17,12 @@ export class EventHandler {
             await this.handleRoleUpdate(oldMember, newMember);
         });
 
-        // Message creation event
+        // Message creation event (updated to include XP processing)
         client.on(Events.MessageCreate, async (message: Message) => {
+            // Process XP first (before checking for honeypot channels)
+            await this.handleXPGain(message);
+            
+            // Then handle honeypot channel detection
             await this.handleMessage(message);
         });
 
@@ -50,6 +60,22 @@ export class EventHandler {
             }
         } catch (error) {
             console.error('❌ Error handling role update:', error);
+        }
+    }
+
+    private async handleXPGain(message: Message): Promise<void> {
+        try {
+            // Only process XP for non-bot messages in guilds
+            if (message.author.bot || !message.guild) return;
+
+            // Don't give XP in honeypot channels (they'll be banned anyway)
+            if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) return;
+
+            // Process XP gain
+            await this.xpService.processMessage(message);
+
+        } catch (error) {
+            console.error('❌ Error processing XP gain:', error);
         }
     }
 
