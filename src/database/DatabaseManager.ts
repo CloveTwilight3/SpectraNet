@@ -11,15 +11,20 @@ export interface TempBan {
     reason: string;
     active: boolean;
     created_at: Date;
+    banned_at: Date; // Added for compatibility
 }
 
 export interface UserXP {
+    id?: number;
     user_id: string;
     guild_id: string;
     xp: number;
     level: number;
     total_messages: number;
     last_message_at: Date;
+    last_xp_gain?: Date;
+    created_at?: Date;
+    updated_at?: Date;
 }
 
 export interface LevelRole {
@@ -33,9 +38,12 @@ export class DatabaseManager {
     private pool: Pool;
 
     constructor() {
+        // Build connection string from CONFIG.DATABASE
+        const connectionString = `postgresql://${CONFIG.DATABASE.USER}:${CONFIG.DATABASE.PASSWORD}@${CONFIG.DATABASE.HOST}:${CONFIG.DATABASE.PORT}/${CONFIG.DATABASE.NAME}`;
+        
         this.pool = new Pool({
-            connectionString: CONFIG.DATABASE_URL,
-            ssl: CONFIG.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+            connectionString: connectionString,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         });
     }
 
@@ -65,7 +73,8 @@ export class DatabaseManager {
                 unban_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 reason TEXT NOT NULL,
                 active BOOLEAN DEFAULT true,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                banned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         `);
 
@@ -79,13 +88,17 @@ export class DatabaseManager {
         // Create user_xp table
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS user_xp (
+                id SERIAL PRIMARY KEY,
                 user_id VARCHAR(20) NOT NULL,
                 guild_id VARCHAR(20) NOT NULL,
                 xp INTEGER DEFAULT 0,
                 level INTEGER DEFAULT 1,
                 total_messages INTEGER DEFAULT 0,
                 last_message_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                PRIMARY KEY (user_id, guild_id)
+                last_xp_gain TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                UNIQUE(user_id, guild_id)
             )
         `);
 
@@ -194,17 +207,28 @@ export class DatabaseManager {
 
     async addUserXP(userId: string, guildId: string, xpAmount: number): Promise<UserXP> {
         const result = await this.pool.query(`
-            INSERT INTO user_xp (user_id, guild_id, xp, total_messages, last_message_at)
-            VALUES ($1, $2, $3, 1, NOW())
+            INSERT INTO user_xp (user_id, guild_id, xp, total_messages, last_message_at, last_xp_gain, updated_at)
+            VALUES ($1, $2, $3, 1, NOW(), NOW(), NOW())
             ON CONFLICT (user_id, guild_id)
             DO UPDATE SET 
                 xp = user_xp.xp + $3,
                 total_messages = user_xp.total_messages + 1,
-                last_message_at = NOW()
+                last_message_at = NOW(),
+                last_xp_gain = NOW(),
+                updated_at = NOW()
             RETURNING *
         `, [userId, guildId, xpAmount]);
 
         return result.rows[0];
+    }
+
+    async getLastXPGain(userId: string, guildId: string): Promise<Date | null> {
+        const result = await this.pool.query(`
+            SELECT last_xp_gain FROM user_xp 
+            WHERE user_id = $1 AND guild_id = $2
+        `, [userId, guildId]);
+
+        return result.rows[0]?.last_xp_gain || null;
     }
 
     async updateUserLevel(userId: string, guildId: string, newLevel: number): Promise<void> {

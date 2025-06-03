@@ -72,7 +72,7 @@ export class ModerationService {
         const pendingKey = `${member.user.id}_${member.guild.id}`;
         
         // Cancel any existing pending ban for this user
-        this.cancelPendingBan(pendingKey);
+        this.cancelPendingBanInternal(pendingKey);
         
         const timeout = setTimeout(async () => {
             try {
@@ -113,7 +113,7 @@ export class ModerationService {
         const pendingKey = `${member.user.id}_${member.guild.id}`;
         
         // Cancel any existing pending ban for this user
-        this.cancelPendingBan(pendingKey);
+        this.cancelPendingBanInternal(pendingKey);
         
         const timeout = setTimeout(async () => {
             try {
@@ -233,10 +233,10 @@ export class ModerationService {
     // Method to cancel a pending ban (useful if user removes the role)
     public cancelPendingBan(userId: string, guildId: string): boolean {
         const pendingKey = `${userId}_${guildId}`;
-        return this.cancelPendingBan(pendingKey);
+        return this.cancelPendingBanInternal(pendingKey);
     }
 
-    private cancelPendingBan(pendingKey: string): boolean {
+    private cancelPendingBanInternal(pendingKey: string): boolean {
         const pending = this.pendingBans.get(pendingKey);
         if (pending) {
             clearTimeout(pending.timeout);
