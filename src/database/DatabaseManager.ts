@@ -38,12 +38,36 @@ export class DatabaseManager {
     private pool: Pool;
 
     constructor() {
-        // Build connection string from CONFIG.DATABASE
-        const connectionString = `postgresql://${CONFIG.DATABASE.USER}:${CONFIG.DATABASE.PASSWORD}@${CONFIG.DATABASE.HOST}:${CONFIG.DATABASE.PORT}/${CONFIG.DATABASE.NAME}`;
+        // Determine SSL configuration
+        let sslConfig;
         
+        if (process.env.DATABASE_SSL === 'true') {
+            sslConfig = { rejectUnauthorized: false };
+        } else if (process.env.DATABASE_SSL === 'false') {
+            sslConfig = false;
+        } else if (process.env.DATABASE_SSL === 'require') {
+            sslConfig = { rejectUnauthorized: true };
+        } else if (process.env.NODE_ENV === 'production') {
+            // For production, try SSL with self-signed certificates allowed
+            sslConfig = { rejectUnauthorized: false };
+        } else {
+            // For development, disable SSL by default
+            sslConfig = false;
+        }
+
+        // Use individual connection parameters for better control
         this.pool = new Pool({
-            connectionString: connectionString,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+            host: CONFIG.DATABASE.HOST,
+            port: CONFIG.DATABASE.PORT,
+            database: CONFIG.DATABASE.NAME,
+            user: CONFIG.DATABASE.USER,
+            password: CONFIG.DATABASE.PASSWORD,
+            ssl: sslConfig,
+            // Connection settings
+            connectionTimeoutMillis: 5000,
+            idleTimeoutMillis: 30000,
+            max: 10, // Maximum number of connections
+            statement_timeout: 30000, // 30 second query timeout
         });
     }
 

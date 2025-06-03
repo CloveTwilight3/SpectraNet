@@ -17,13 +17,37 @@ export class EventHandler {
             await this.handleRoleUpdate(oldMember, newMember);
         });
 
-        // Message creation event (updated to include XP processing)
+        // Message creation event - handle honeypot channels FIRST, then XP
         client.on(Events.MessageCreate, async (message: Message) => {
-            // Process XP first (before checking for honeypot channels)
-            await this.handleXPGain(message);
+            // Ignore bot messages
+            if (message.author.bot || !message.guild) return;
             
-            // Then handle honeypot channel detection
-            await this.handleMessage(message);
+            // Check if message is in a honeypot channel FIRST
+            if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) {
+                console.log(`🚨 Message in honeypot channel from user: ${message.author.tag} (${message.author.id})`);
+                
+                // Get the guild member
+                const member = message.guild?.members.cache.get(message.author.id);
+                
+                if (member) {
+                    // Delete the message first
+                    try {
+                        await message.delete();
+                        console.log(`🗑️ Deleted honeypot message from ${message.author.tag}`);
+                    } catch (deleteError) {
+                        console.error('❌ Failed to delete message:', deleteError);
+                    }
+
+                    // Then permanently ban the member (honeypot channels are immediate bans)
+                    await this.moderationService.banMember(member, CONFIG.BAN_REASONS.CHANNEL);
+                }
+                
+                // Don't process XP for honeypot messages - user is getting banned
+                return;
+            }
+            
+            // Only process XP for non-honeypot messages
+            await this.handleXPGain(message);
         });
 
         // Error handling
@@ -77,7 +101,7 @@ export class EventHandler {
             // Only process XP for non-bot messages in guilds
             if (message.author.bot || !message.guild) return;
 
-            // Don't give XP in honeypot channels (they'll be banned anyway)
+            // Double-check: Don't give XP in honeypot channels (should already be handled above)
             if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) return;
 
             // Process XP gain
@@ -85,36 +109,6 @@ export class EventHandler {
 
         } catch (error) {
             console.error('❌ Error processing XP gain:', error);
-        }
-    }
-
-    private async handleMessage(message: Message): Promise<void> {
-        try {
-            // Ignore bot messages
-            if (message.author.bot) return;
-
-            // Check if message is in a honeypot channel
-            if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) {
-                console.log(`🚨 Message in honeypot channel from user: ${message.author.tag} (${message.author.id})`);
-                
-                // Get the guild member
-                const member = message.guild?.members.cache.get(message.author.id);
-                
-                if (member) {
-                    // Delete the message first
-                    try {
-                        await message.delete();
-                        console.log(`🗑️ Deleted honeypot message from ${message.author.tag}`);
-                    } catch (deleteError) {
-                        console.error('❌ Failed to delete message:', deleteError);
-                    }
-
-                    // Then permanently ban the member (honeypot channels are immediate bans)
-                    await this.moderationService.banMember(member, CONFIG.BAN_REASONS.CHANNEL);
-                }
-            }
-        } catch (error) {
-            console.error('❌ Error handling message:', error);
         }
     }
 }
