@@ -213,7 +213,7 @@ export class DatabaseManager {
             WHERE guild_id = $1 AND level = $2 AND role_id = $3
         `, [guildId, level, roleId]);
 
-        return result.rowCount > 0;
+        return (result.rowCount || 0) > 0;
     }
 
     async getAllLevelRoles(guildId: string): Promise<LevelRole[]> {
