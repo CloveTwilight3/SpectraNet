@@ -9,6 +9,7 @@ import { ManualUnbanService } from '../services/ManualUnbanService';
 import { UnbanService } from '../services/UnbanService';
 import { XPService } from '../services/XPService';
 import { OnboardingDetectionService } from '../services/OnboardingDetectionService';
+import { LoggingService } from '../services/LoggingService';
 import { commands } from '../commands';
 
 export class HoneypotBot {
@@ -21,6 +22,7 @@ export class HoneypotBot {
     private unbanService: UnbanService;
     private xpService: XPService;
     private onboardingService: OnboardingDetectionService;
+    private loggingService: LoggingService;
 
     constructor() {
         this.client = new Client({
@@ -34,13 +36,14 @@ export class HoneypotBot {
 
         // Initialize services
         this.database = new DatabaseManager();
-        this.moderationService = new ModerationService(this.database);
+        this.loggingService = new LoggingService(this.client);
+        this.moderationService = new ModerationService(this.database, this.loggingService);
         this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
-        this.onboardingService = new OnboardingDetectionService(this.client);
+        this.onboardingService = new OnboardingDetectionService(this.client, this.loggingService);
         this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
-        this.unbanService = new UnbanService(this.client, this.database);
+        this.unbanService = new UnbanService(this.client, this.database, this.loggingService);
 
         // Connect services
         this.onboardingService.setModerationService(this.moderationService);
@@ -58,8 +61,9 @@ export class HoneypotBot {
             console.log(`✨ XP system enabled`);
             console.log(`🎯 Onboarding detection enabled (rules agreement)`);
             
-            // Initialize database
+            // Initialize services in order
             await this.database.initialize();
+            await this.loggingService.initialize();
             
             // Register slash commands
             await this.registerCommands();
