@@ -1,6 +1,7 @@
 // src/services/OnboardingDetectionService.ts
 import { GuildMember, Events, Client } from 'discord.js';
 import { CONFIG } from '../config';
+import { LoggingService } from './LoggingService';
 
 interface OnboardingUser {
     joinedAt: Date;
@@ -11,7 +12,10 @@ export class OnboardingDetectionService {
     private onboardingUsers: Map<string, OnboardingUser> = new Map();
     private moderationService: any; // Will be set later
 
-    constructor(private client: Client) {}
+    constructor(
+        private client: Client,
+        private loggingService?: LoggingService
+    ) {}
 
     setModerationService(moderationService: any): void {
         this.moderationService = moderationService;
@@ -107,7 +111,13 @@ export class OnboardingDetectionService {
             honeypotRoles[role.id]
         );
 
-        if (memberHoneypotRoles.size > 0) {
+        const hadHoneypotRoles = memberHoneypotRoles.size > 0;
+        const honeypotRoleIds = memberHoneypotRoles.map(role => role.id);
+
+        // Log onboarding completion
+        await this.loggingService?.logOnboardingComplete(member, hadHoneypotRoles, honeypotRoleIds);
+
+        if (hadHoneypotRoles) {
             const roleList = memberHoneypotRoles.map(role => role.name).join(', ');
             console.log(`🚨 ${member.user.tag} has honeypot role(s) after onboarding: ${roleList}`);
             
@@ -125,19 +135,35 @@ export class OnboardingDetectionService {
         
         if (!this.moderationService) {
             console.error('❌ ModerationService not set in OnboardingDetectionService');
+            await this.loggingService?.logError(
+                'ModerationService not set in OnboardingDetectionService',
+                `User: ${member.user.tag}, Role: ${roleId}`
+            );
             return;
         }
 
         const roleConfig = CONFIG.HONEYPOT_ROLES[roleId];
         if (!roleConfig) {
             console.error(`❌ No config found for honeypot role ${roleId}`);
+            await this.loggingService?.logError(
+                `No config found for honeypot role ${roleId}`,
+                `User: ${member.user.tag}`
+            );
             return;
         }
 
-        if (roleConfig.type === 'timeout') {
-            await this.moderationService.executeTimeout(member, roleId, roleConfig.duration);
-        } else {
-            await this.moderationService.executeTempBan(member, roleId, roleConfig.duration);
+        try {
+            if (roleConfig.type === 'timeout') {
+                await this.moderationService.executeTimeout(member, roleId, roleConfig.duration);
+            } else {
+                await this.moderationService.executeTempBan(member, roleId, roleConfig.duration);
+            }
+        } catch (error) {
+            console.error(`❌ Error executing punishment for ${member.user.tag}:`, error);
+            await this.loggingService?.logError(
+                `Error executing punishment for ${member.user.tag}: ${error}`,
+                `Role: ${roleId}, Type: ${roleConfig.type}`
+            );
         }
     }
 
