@@ -11,14 +11,16 @@ interface OnboardingUser {
 export class OnboardingDetectionService {
     private onboardingUsers: Map<string, OnboardingUser> = new Map();
     private moderationService: any; // Will be set later
+    private loggingService?: LoggingService; // Will be set later
 
-    constructor(
-        private client: Client,
-        private loggingService?: LoggingService
-    ) {}
+    constructor(private client: Client) {}
 
     setModerationService(moderationService: any): void {
         this.moderationService = moderationService;
+    }
+
+    setLoggingService(service: LoggingService): void {
+        this.loggingService = service;
     }
 
     setupOnboardingDetection(): void {
@@ -112,10 +114,10 @@ export class OnboardingDetectionService {
         );
 
         const hadHoneypotRoles = memberHoneypotRoles.size > 0;
-        const honeypotRoleIds = memberHoneypotRoles.map(role => role.id);
+        const roleNames = memberHoneypotRoles.map(role => role.name);
 
         // Log onboarding completion
-        await this.loggingService?.logOnboardingComplete(member, hadHoneypotRoles, honeypotRoleIds);
+        await this.loggingService?.logOnboardingComplete(member, hadHoneypotRoles, roleNames);
 
         if (hadHoneypotRoles) {
             const roleList = memberHoneypotRoles.map(role => role.name).join(', ');
@@ -135,20 +137,12 @@ export class OnboardingDetectionService {
         
         if (!this.moderationService) {
             console.error('❌ ModerationService not set in OnboardingDetectionService');
-            await this.loggingService?.logError(
-                'ModerationService not set in OnboardingDetectionService',
-                `User: ${member.user.tag}, Role: ${roleId}`
-            );
             return;
         }
 
         const roleConfig = CONFIG.HONEYPOT_ROLES[roleId];
         if (!roleConfig) {
             console.error(`❌ No config found for honeypot role ${roleId}`);
-            await this.loggingService?.logError(
-                `No config found for honeypot role ${roleId}`,
-                `User: ${member.user.tag}`
-            );
             return;
         }
 
@@ -159,10 +153,10 @@ export class OnboardingDetectionService {
                 await this.moderationService.executeTempBan(member, roleId, roleConfig.duration);
             }
         } catch (error) {
-            console.error(`❌ Error executing punishment for ${member.user.tag}:`, error);
+            console.error(`❌ Error punishing ${member.user.tag}:`, error);
             await this.loggingService?.logError(
-                `Error executing punishment for ${member.user.tag}: ${error}`,
-                `Role: ${roleId}, Type: ${roleConfig.type}`
+                error instanceof Error ? error.message : String(error),
+                `Honeypot punishment for ${member.user.tag} (${member.user.id}) - Role: ${roleId}`
             );
         }
     }
