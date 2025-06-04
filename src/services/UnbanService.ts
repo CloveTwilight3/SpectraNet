@@ -1,17 +1,21 @@
 // src/services/UnbanService.ts
 import { Client } from 'discord.js';
 import { DatabaseManager } from '../database/DatabaseManager';
-import { TempBan } from '../types';
 import { LoggingService } from './LoggingService';
+import { TempBan } from '../types';
 
 export class UnbanService {
     private checkInterval: NodeJS.Timeout | null = null;
+    private loggingService?: LoggingService;
 
     constructor(
         private client: Client, 
-        private database: DatabaseManager,
-        private loggingService?: LoggingService
+        private database: DatabaseManager
     ) {}
+
+    setLoggingService(service: LoggingService): void {
+        this.loggingService = service;
+    }
 
     start(): void {
         // Check for unbans every minute
@@ -24,7 +28,6 @@ export class UnbanService {
                 }
             } catch (error) {
                 console.error('❌ Error checking for unbans:', error);
-                await this.loggingService?.logError(`Error checking for unbans: ${error}`);
             }
         }, 60 * 1000); // Check every minute
     }
@@ -44,19 +47,24 @@ export class UnbanService {
                 return;
             }
 
+            let userName = `User ID: ${ban.user_id}`;
+
             // Try to unban the user
             try {
                 await guild.members.unban(ban.user_id, 'Temporary ban expired');
                 console.log(`✅ Successfully unbanned user ${ban.user_id} from guild ${ban.guild_id}`);
-                
-                // Log the automatic unban
-                await this.loggingService?.logUnban(
-                    ban.user_id,
-                    this.client.user?.id || 'system',
-                    'Temporary ban expired',
-                    true // isAutomatic = true
-                );
-                
+
+                // Try to get user name for logging
+                try {
+                    const user = await this.client.users.fetch(ban.user_id);
+                    userName = user.tag;
+                } catch (error) {
+                    // User might be deleted, use ID
+                }
+
+                // Log the auto unban
+                await this.loggingService?.logAutoUnban(ban.user_id, userName);
+
             } catch (error) {
                 console.warn(`⚠️ Failed to unban user ${ban.user_id}:`, error);
             }
@@ -66,10 +74,6 @@ export class UnbanService {
 
         } catch (error) {
             console.error('❌ Error processing unban:', error);
-            await this.loggingService?.logError(
-                `Error processing unban: ${error}`,
-                `User: ${ban.user_id}, Guild: ${ban.guild_id}`
-            );
         }
     }
 }

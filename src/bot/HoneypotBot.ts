@@ -37,17 +37,20 @@ export class HoneypotBot {
         // Initialize services
         this.database = new DatabaseManager();
         this.loggingService = new LoggingService(this.client);
-        this.moderationService = new ModerationService(this.database, this.loggingService);
+        this.moderationService = new ModerationService(this.database);
         this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
-        this.onboardingService = new OnboardingDetectionService(this.client, this.loggingService);
+        this.onboardingService = new OnboardingDetectionService(this.client);
         this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
-        this.unbanService = new UnbanService(this.client, this.database, this.loggingService);
+        this.unbanService = new UnbanService(this.client, this.database);
 
         // Connect services
         this.onboardingService.setModerationService(this.moderationService);
+        this.onboardingService.setLoggingService(this.loggingService);
         this.moderationService.setOnboardingService(this.onboardingService);
+        this.moderationService.setLoggingService(this.loggingService);
+        this.unbanService.setLoggingService(this.loggingService);
 
         this.setupEventListeners();
     }
@@ -61,8 +64,10 @@ export class HoneypotBot {
             console.log(`✨ XP system enabled`);
             console.log(`🎯 Onboarding detection enabled (rules agreement)`);
             
-            // Initialize services in order
+            // Initialize database
             await this.database.initialize();
+            
+            // Initialize logging
             await this.loggingService.initialize();
             
             // Register slash commands
@@ -71,6 +76,9 @@ export class HoneypotBot {
             // Start services
             this.onboardingService.setupOnboardingDetection();
             this.unbanService.start();
+
+            // Log bot startup
+            await this.loggingService.logSimple(`🤖 Honeypot Bot started successfully! Monitoring ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles and ${CONFIG.HONEYPOT_CHANNELS.length} channels.`);
         });
 
         // Setup event handlers
@@ -129,6 +137,9 @@ export class HoneypotBot {
 
     public async stop(): Promise<void> {
         console.log('🛑 Shutting down bot...');
+        
+        // Log shutdown
+        await this.loggingService.logSimple('🛑 Honeypot Bot shutting down...');
         
         // Stop services in proper order
         this.unbanService.stop();
