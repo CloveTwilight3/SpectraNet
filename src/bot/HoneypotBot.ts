@@ -8,6 +8,7 @@ import { ModerationService } from '../services/ModerationService';
 import { ManualUnbanService } from '../services/ManualUnbanService';
 import { UnbanService } from '../services/UnbanService';
 import { XPService } from '../services/XPService';
+import { OnboardingDetectionService } from '../services/OnboardingDetectionService';
 import { commands } from '../commands';
 
 export class HoneypotBot {
@@ -19,6 +20,7 @@ export class HoneypotBot {
     private manualUnbanService: ManualUnbanService;
     private unbanService: UnbanService;
     private xpService: XPService;
+    private onboardingService: OnboardingDetectionService;
 
     constructor() {
         this.client = new Client({
@@ -35,9 +37,14 @@ export class HoneypotBot {
         this.moderationService = new ModerationService(this.database);
         this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
+        this.onboardingService = new OnboardingDetectionService(this.client);
         this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
+
+        // Connect services
+        this.onboardingService.setModerationService(this.moderationService);
+        this.moderationService.setOnboardingService(this.onboardingService);
 
         this.setupEventListeners();
     }
@@ -49,7 +56,7 @@ export class HoneypotBot {
             console.log(`🔍 Monitoring ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles`);
             console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels`);
             console.log(`✨ XP system enabled`);
-            console.log(`⏳ Ban delay system enabled (10 minute onboarding window)`);
+            console.log(`🎯 Onboarding detection enabled (rules agreement)`);
             
             // Initialize database
             await this.database.initialize();
@@ -57,7 +64,8 @@ export class HoneypotBot {
             // Register slash commands
             await this.registerCommands();
             
-            // Start unban checker
+            // Start services
+            this.onboardingService.setupOnboardingDetection();
             this.unbanService.start();
         });
 

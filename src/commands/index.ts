@@ -19,6 +19,11 @@ export const commands = [
                 .setDescription('User mention (@user) or User ID (e.g., 123456789012345678)')
                 .setRequired(true))
         .toJSON(),
+    new SlashCommandBuilder()
+        .setName('onboarding')
+        .setDescription('View users currently going through onboarding')
+        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+        .toJSON(),
 
     // Honeypot management commands
     new SlashCommandBuilder()

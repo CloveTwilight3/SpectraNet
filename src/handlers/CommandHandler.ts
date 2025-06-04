@@ -32,6 +32,9 @@ export class CommandHandler {
                 case 'userinfo':
                     await this.handleUserInfoCommand(interaction);
                     break;
+                case 'onboarding':
+                    await this.handleOnboardingCommand(interaction);
+                    break;
                     
                 // Honeypot management commands
                 case 'pendingbans':
@@ -84,6 +87,13 @@ export class CommandHandler {
             .map(([roleId, config]) => `<@&${roleId}>: ${Math.round(config.duration / (24 * 60 * 60 * 1000))}d (${config.type})`)
             .join('\n');
 
+        // Get onboarding stats if the service is available
+        let onboardingInfo = '';
+        if ((this.moderationService as any).onboardingService) {
+            const onboardingCount = (this.moderationService as any).onboardingService.getOnboardingCount();
+            onboardingInfo = `• ${onboardingCount} users onboarding\n`;
+        }
+
         const pendingBansCount = this.moderationService.getPendingBans(interaction.guildId!).length;
 
         await interaction.reply({
@@ -91,9 +101,10 @@ export class CommandHandler {
                     `📊 Monitoring:\n` +
                     `• ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles\n` +
                     `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n` +
+                    `${onboardingInfo}` +
                     `• ${pendingBansCount} pending bans\n\n` +
                     `⚙️ Role Configurations:\n${roleConfigs || 'None configured'}\n\n` +
-                    `⏳ Ban Delay: 10 minute onboarding window`,
+                    `🎯 Onboarding Detection: Rules Agreement (5s delay)`,
             ephemeral: true,
         });
     }
@@ -123,6 +134,58 @@ export class CommandHandler {
             console.error('❌ Error handling tempbans command:', error);
             await interaction.reply({
                 content: '❌ Error retrieving temporary bans.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleOnboardingCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            // Get onboarding users
+            const onboardingUsers = (this.moderationService as any).onboardingService?.getOnboardingUsers() || [];
+
+            if (onboardingUsers.length === 0) {
+                await interaction.reply({
+                    content: '✅ No users currently onboarding.',
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            const usersList = await Promise.all(
+                onboardingUsers.slice(0, 10).map(async (userData: any) => {
+                    try {
+                        const user = await this.client.users.fetch(userData.userId);
+                        const joinedTimestamp = Math.floor(userData.joinedAt.getTime() / 1000);
+                        const status = userData.rulesAccepted ? '✅ Rules Accepted' : '⏳ Pending Rules';
+                        return `${user.tag} - Joined <t:${joinedTimestamp}:R> - ${status}`;
+                    } catch {
+                        return `Unknown User (${userData.userId}) - Joined <t:${Math.floor(userData.joinedAt.getTime() / 1000)}:R>`;
+                    }
+                })
+            );
+
+            const embed = new EmbedBuilder()
+                .setTitle('👋 Users Currently Onboarding')
+                .setDescription(usersList.join('\n'))
+                .setColor(0x00AE86)
+                .setTimestamp()
+                .setFooter({ text: `${onboardingUsers.length} total onboarding users` });
+
+            if (onboardingUsers.length > 10) {
+                embed.addFields({
+                    name: 'ℹ️ Note',
+                    value: `Showing first 10 of ${onboardingUsers.length} onboarding users`,
+                    inline: false
+                });
+            }
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        } catch (error) {
+            console.error('❌ Error handling onboarding command:', error);
+            await interaction.reply({
+                content: '❌ Error retrieving onboarding users.',
                 ephemeral: true,
             });
         }

@@ -1,3 +1,4 @@
+// src/services/ModerationService.ts
 import { GuildMember, EmbedBuilder } from 'discord.js';
 import { CONFIG } from '../config';
 import { DatabaseManager } from '../database/DatabaseManager';
@@ -15,27 +16,24 @@ interface PendingBan {
 
 export class ModerationService {
     private pendingBans: Map<string, PendingBan> = new Map();
+    private onboardingService?: any; // Will be set by OnboardingDetectionService
     
     constructor(private database: DatabaseManager) {}
 
+    setOnboardingService(service: any): void {
+        this.onboardingService = service;
+    }
+
     async timeoutMember(member: GuildMember, roleId: string, duration: number): Promise<void> {
         try {
-            // Check if member joined recently (within last 10 minutes for onboarding)
-            const memberJoinedAt = member.joinedAt;
-            const now = new Date();
-            const timeSinceJoin = memberJoinedAt ? now.getTime() - memberJoinedAt.getTime() : Infinity;
-            const onboardingWindowMs = 10 * 60 * 1000; // 10 minutes
-            
-            // If member joined recently, delay the timeout
-            if (timeSinceJoin < onboardingWindowMs) {
-                const delayMs = onboardingWindowMs - timeSinceJoin + (30 * 1000); // Add 30 second buffer
-                console.log(`⏳ Delaying timeout for ${member.user.tag} by ${Math.round(delayMs / 1000)} seconds (onboarding window)`);
-                
-                this.scheduleDelayedTimeout(member, roleId, duration, delayMs);
+            // Check if user is still onboarding
+            if (this.onboardingService?.isUserOnboarding(member.user.id)) {
+                console.log(`⏳ User ${member.user.tag} still onboarding - waiting for rules agreement`);
+                // Don't schedule anything - the onboarding service will handle it
                 return;
             }
 
-            // Proceed with immediate timeout if not in onboarding window
+            // User has completed onboarding, proceed immediately
             await this.executeTimeout(member, roleId, duration);
 
         } catch (error) {
@@ -45,22 +43,14 @@ export class ModerationService {
 
     async tempBanMember(member: GuildMember, roleId: string, duration: number): Promise<void> {
         try {
-            // Check if member joined recently (within last 10 minutes for onboarding)
-            const memberJoinedAt = member.joinedAt;
-            const now = new Date();
-            const timeSinceJoin = memberJoinedAt ? now.getTime() - memberJoinedAt.getTime() : Infinity;
-            const onboardingWindowMs = 10 * 60 * 1000; // 10 minutes
-            
-            // If member joined recently, delay the ban
-            if (timeSinceJoin < onboardingWindowMs) {
-                const delayMs = onboardingWindowMs - timeSinceJoin + (30 * 1000); // Add 30 second buffer
-                console.log(`⏳ Delaying temp ban for ${member.user.tag} by ${Math.round(delayMs / 1000)} seconds (onboarding window)`);
-                
-                this.scheduleDelayedTempBan(member, roleId, duration, delayMs);
+            // Check if user is still onboarding
+            if (this.onboardingService?.isUserOnboarding(member.user.id)) {
+                console.log(`⏳ User ${member.user.tag} still onboarding - waiting for rules agreement`);
+                // Don't schedule anything - the onboarding service will handle it
                 return;
             }
 
-            // Proceed with immediate ban if not in onboarding window
+            // User has completed onboarding, proceed immediately
             await this.executeTempBan(member, roleId, duration);
 
         } catch (error) {
@@ -68,89 +58,8 @@ export class ModerationService {
         }
     }
 
-    private scheduleDelayedTimeout(member: GuildMember, roleId: string, duration: number, delayMs: number): void {
-        const pendingKey = `${member.user.id}_${member.guild.id}`;
-        
-        // Cancel any existing pending ban for this user
-        this.cancelPendingBanInternal(pendingKey);
-        
-        const timeout = setTimeout(async () => {
-            try {
-                // Re-fetch member to ensure they're still in the server
-                const currentMember = await member.guild.members.fetch(member.user.id);
-                
-                // Check if they still have the honeypot role
-                if (currentMember.roles.cache.has(roleId)) {
-                    console.log(`⏰ Executing delayed timeout for ${currentMember.user.tag}`);
-                    await this.executeTimeout(currentMember, roleId, duration);
-                } else {
-                    console.log(`✅ ${member.user.tag} removed honeypot role before timeout - cancelling punishment`);
-                }
-                
-                // Clean up
-                this.pendingBans.delete(pendingKey);
-                
-            } catch (error) {
-                console.error(`❌ Error executing delayed timeout for ${member.user.tag}:`, error);
-                this.pendingBans.delete(pendingKey);
-            }
-        }, delayMs);
-
-        // Store the pending ban
-        this.pendingBans.set(pendingKey, {
-            userId: member.user.id,
-            guildId: member.guild.id,
-            roleId,
-            memberJoinedAt: member.joinedAt || new Date(),
-            scheduledAt: new Date(Date.now() + delayMs),
-            timeout,
-            type: 'timeout',
-            duration
-        });
-    }
-
-    private scheduleDelayedTempBan(member: GuildMember, roleId: string, duration: number, delayMs: number): void {
-        const pendingKey = `${member.user.id}_${member.guild.id}`;
-        
-        // Cancel any existing pending ban for this user
-        this.cancelPendingBanInternal(pendingKey);
-        
-        const timeout = setTimeout(async () => {
-            try {
-                // Re-fetch member to ensure they're still in the server
-                const currentMember = await member.guild.members.fetch(member.user.id);
-                
-                // Check if they still have the honeypot role
-                if (currentMember.roles.cache.has(roleId)) {
-                    console.log(`⏰ Executing delayed temp ban for ${currentMember.user.tag}`);
-                    await this.executeTempBan(currentMember, roleId, duration);
-                } else {
-                    console.log(`✅ ${member.user.tag} removed honeypot role before ban - cancelling punishment`);
-                }
-                
-                // Clean up
-                this.pendingBans.delete(pendingKey);
-                
-            } catch (error) {
-                console.error(`❌ Error executing delayed temp ban for ${member.user.tag}:`, error);
-                this.pendingBans.delete(pendingKey);
-            }
-        }, delayMs);
-
-        // Store the pending ban
-        this.pendingBans.set(pendingKey, {
-            userId: member.user.id,
-            guildId: member.guild.id,
-            roleId,
-            memberJoinedAt: member.joinedAt || new Date(),
-            scheduledAt: new Date(Date.now() + delayMs),
-            timeout,
-            type: 'tempban',
-            duration
-        });
-    }
-
-    private async executeTimeout(member: GuildMember, roleId: string, duration: number): Promise<void> {
+    // Made public so OnboardingDetectionService can call it directly
+    public async executeTimeout(member: GuildMember, roleId: string, duration: number): Promise<void> {
         // Check if the bot has permission to timeout members
         if (!member.guild.members.me?.permissions.has('ModerateMembers')) {
             console.error('❌ Bot does not have permission to timeout members');
@@ -170,7 +79,8 @@ export class ModerationService {
         console.log(`⏱️ Successfully timed out ${member.user.tag} (${member.id}) for ${durationDays} days - Role: ${roleId}`);
     }
 
-    private async executeTempBan(member: GuildMember, roleId: string, duration: number): Promise<void> {
+    // Made public so OnboardingDetectionService can call it directly
+    public async executeTempBan(member: GuildMember, roleId: string, duration: number): Promise<void> {
         // Check if the bot has permission to ban
         if (!member.guild.members.me?.permissions.has('BanMembers')) {
             console.error('❌ Bot does not have permission to ban members');
