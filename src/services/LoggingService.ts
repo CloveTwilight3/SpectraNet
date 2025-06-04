@@ -1,5 +1,5 @@
 // src/services/LoggingService.ts
-import { Client, EmbedBuilder, TextChannel, GuildMember } from 'discord.js';
+import { Client, EmbedBuilder, TextChannel } from 'discord.js';
 import { CONFIG } from '../config';
 
 export class LoggingService {
@@ -12,24 +12,24 @@ export class LoggingService {
 
     async initialize(): Promise<void> {
         if (!CONFIG.LOG_CHANNEL_ID) {
-            console.log('ℹ️ No LOG_CHANNEL_ID configured, Discord logging disabled');
+            console.warn('⚠️ LOG_CHANNEL_ID not configured - Discord logging disabled');
             return;
         }
 
         try {
             const channel = await this.client.channels.fetch(CONFIG.LOG_CHANNEL_ID);
-            if (channel?.isTextBased()) {
+            if (channel?.isTextBased() && channel.type === 0) { // GUILD_TEXT = 0
                 this.logChannel = channel as TextChannel;
-                console.log(`✅ Discord logging enabled - Channel: ${channel.name || 'Unknown'}`);
+                console.log(`✅ Logging channel initialized: #${this.logChannel.name}`);
             } else {
-                console.warn('⚠️ LOG_CHANNEL_ID is not a text channel');
+                console.error('❌ LOG_CHANNEL_ID is not a text channel');
             }
         } catch (error) {
             console.error('❌ Failed to fetch log channel:', error);
         }
     }
 
-    async logTimeout(member: GuildMember, roleId: string, duration: number): Promise<void> {
+    async logTimeout(member: any, roleId: string, duration: number): Promise<void> {
         if (!this.logChannel) return;
 
         const durationDays = Math.round(duration / (24 * 60 * 60 * 1000));
@@ -43,9 +43,13 @@ export class LoggingService {
                 { name: 'Role', value: `<@&${roleId}>`, inline: true },
                 { name: 'Reason', value: CONFIG.BAN_REASONS.ROLE_TIMEOUT, inline: false }
             )
-            .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Timeout' });
+            .setFooter({ text: 'Honeypot Bot - Timeout' });
+
+        // Only set thumbnail if member has displayAvatarURL method
+        if (member.user && typeof member.user.displayAvatarURL === 'function') {
+            embed.setThumbnail(member.user.displayAvatarURL());
+        }
 
         try {
             await this.logChannel.send({ embeds: [embed] });
@@ -54,12 +58,10 @@ export class LoggingService {
         }
     }
 
-    async logTempBan(member: GuildMember, roleId: string, duration: number): Promise<void> {
+    async logTempBan(member: any, roleId: string, duration: number): Promise<void> {
         if (!this.logChannel) return;
 
         const durationDays = Math.round(duration / (24 * 60 * 60 * 1000));
-        const unbanAt = new Date(Date.now() + duration);
-        const unbanTimestamp = Math.floor(unbanAt.getTime() / 1000);
         
         const embed = new EmbedBuilder()
             .setTitle('🔨 User Temporarily Banned (Honeypot)')
@@ -67,13 +69,17 @@ export class LoggingService {
             .addFields(
                 { name: 'User', value: `${member.user.tag} (${member.user.id})`, inline: true },
                 { name: 'Duration', value: `${durationDays} days`, inline: true },
-                { name: 'Unban Date', value: `<t:${unbanTimestamp}:F>`, inline: true },
                 { name: 'Role', value: `<@&${roleId}>`, inline: true },
-                { name: 'Reason', value: CONFIG.BAN_REASONS.ROLE_TEMPBAN, inline: false }
+                { name: 'Reason', value: CONFIG.BAN_REASONS.ROLE_TEMPBAN, inline: false },
+                { name: 'Unban Date', value: `<t:${Math.floor((Date.now() + duration) / 1000)}:F>`, inline: false }
             )
-            .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Temp Ban' });
+            .setFooter({ text: 'Honeypot Bot - Temp Ban' });
+
+        // Only set thumbnail if member has displayAvatarURL method
+        if (member.user && typeof member.user.displayAvatarURL === 'function') {
+            embed.setThumbnail(member.user.displayAvatarURL());
+        }
 
         try {
             await this.logChannel.send({ embeds: [embed] });
@@ -82,21 +88,23 @@ export class LoggingService {
         }
     }
 
-    async logPermanentBan(member: GuildMember, reason: string): Promise<void> {
+    async logPermanentBan(member: any, reason: string): Promise<void> {
         if (!this.logChannel) return;
-        
+
         const embed = new EmbedBuilder()
             .setTitle('🔨 User Permanently Banned (Honeypot)')
-            .setColor(0x8B0000)
+            .setColor(0x000000)
             .addFields(
                 { name: 'User', value: `${member.user.tag} (${member.user.id})`, inline: true },
-                { name: 'Type', value: 'Permanent Ban', inline: true },
-                { name: 'Trigger', value: 'Honeypot Channel Message', inline: true },
                 { name: 'Reason', value: reason, inline: false }
             )
-            .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Permanent Ban' });
+            .setFooter({ text: 'Honeypot Bot - Permanent Ban' });
+
+        // Only set thumbnail if member has displayAvatarURL method
+        if (member.user && typeof member.user.displayAvatarURL === 'function') {
+            embed.setThumbnail(member.user.displayAvatarURL());
+        }
 
         try {
             await this.logChannel.send({ embeds: [embed] });
@@ -105,44 +113,19 @@ export class LoggingService {
         }
     }
 
-    async logUnban(userId: string, moderatorId: string, reason: string, isAutomatic: boolean = false): Promise<void> {
+    async logUnban(userId: string, userName: string, reason: string, moderator: string): Promise<void> {
         if (!this.logChannel) return;
 
-        let user;
-        let moderator;
-        
-        try {
-            user = await this.client.users.fetch(userId);
-        } catch {
-            user = { tag: 'Unknown User', id: userId };
-        }
-
-        if (!isAutomatic) {
-            try {
-                moderator = await this.client.users.fetch(moderatorId);
-            } catch {
-                moderator = { tag: 'Unknown Moderator', id: moderatorId };
-            }
-        }
-        
         const embed = new EmbedBuilder()
-            .setTitle(isAutomatic ? '🔓 Automatic Unban' : '🔓 Manual Unban')
+            .setTitle('🔓 User Unbanned')
             .setColor(0x00FF00)
             .addFields(
-                { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
-                { name: 'Type', value: isAutomatic ? 'Automatic' : 'Manual', inline: true },
+                { name: 'User', value: `${userName} (${userId})`, inline: true },
+                { name: 'Moderator', value: moderator, inline: true },
                 { name: 'Reason', value: reason, inline: false }
             )
             .setTimestamp()
-            .setFooter({ text: isAutomatic ? 'Honeypot Bot Auto Unban' : 'Honeypot Bot Manual Unban' });
-
-        if (!isAutomatic && moderator) {
-            embed.addFields({ name: 'Moderator', value: `${moderator.tag} (${moderator.id})`, inline: true });
-        }
-
-        if (user.displayAvatarURL) {
-            embed.setThumbnail(user.displayAvatarURL());
-        }
+            .setFooter({ text: 'Honeypot Bot - Manual Unban' });
 
         try {
             await this.logChannel.send({ embeds: [embed] });
@@ -151,54 +134,50 @@ export class LoggingService {
         }
     }
 
-    async logRoleRemoval(member: GuildMember, removedRoles: string[], moderatorId: string): Promise<void> {
+    async logAutoUnban(userId: string, userName: string): Promise<void> {
         if (!this.logChannel) return;
 
-        let moderator;
-        try {
-            moderator = await this.client.users.fetch(moderatorId);
-        } catch {
-            moderator = { tag: 'Unknown Moderator', id: moderatorId };
-        }
-
-        const rolesList = removedRoles.map(roleId => `<@&${roleId}>`).join(', ');
-        
         const embed = new EmbedBuilder()
-            .setTitle('➖ Honeypot Roles Removed')
-            .setColor(0x00AAFF)
+            .setTitle('🔓 Temporary Ban Expired')
+            .setColor(0x00AA00)
             .addFields(
-                { name: 'User', value: `${member.user.tag} (${member.user.id})`, inline: true },
-                { name: 'Moderator', value: `${moderator.tag} (${moderator.id})`, inline: true },
-                { name: 'Roles Removed', value: rolesList, inline: false }
+                { name: 'User', value: `${userName} (${userId})`, inline: true },
+                { name: 'Type', value: 'Automatic Unban', inline: true }
             )
-            .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Role Removal' });
+            .setFooter({ text: 'Honeypot Bot - Auto Unban' });
 
         try {
             await this.logChannel.send({ embeds: [embed] });
         } catch (error) {
-            console.error('❌ Failed to send role removal log:', error);
+            console.error('❌ Failed to send auto unban log:', error);
         }
     }
 
-    async logOnboardingComplete(member: GuildMember, hadHoneypotRoles: boolean, honeypotRoles: string[] = []): Promise<void> {
+    async logOnboardingComplete(member: any, hadHoneypotRoles: boolean, roleNames: string[]): Promise<void> {
         if (!this.logChannel) return;
 
         const embed = new EmbedBuilder()
-            .setTitle('🎯 Onboarding Completed')
+            .setTitle('✅ User Completed Onboarding')
             .setColor(hadHoneypotRoles ? 0xFF4444 : 0x00FF00)
             .addFields(
                 { name: 'User', value: `${member.user.tag} (${member.user.id})`, inline: true },
-                { name: 'Status', value: hadHoneypotRoles ? '🚨 Had Honeypot Roles' : '✅ Clean', inline: true }
+                { name: 'Had Honeypot Roles', value: hadHoneypotRoles ? '🚨 Yes' : '✅ No', inline: true }
             )
-            .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Onboarding' });
+            .setFooter({ text: 'Honeypot Bot - Onboarding' });
 
-        if (hadHoneypotRoles && honeypotRoles.length > 0) {
-            const rolesList = honeypotRoles.map(roleId => `<@&${roleId}>`).join(', ');
-            embed.addFields({ name: 'Honeypot Roles Found', value: rolesList, inline: false });
+        // Only set thumbnail if member has displayAvatarURL method
+        if (member.user && typeof member.user.displayAvatarURL === 'function') {
+            embed.setThumbnail(member.user.displayAvatarURL());
+        }
+
+        if (hadHoneypotRoles) {
+            embed.addFields({
+                name: 'Honeypot Roles Found',
+                value: roleNames.join(', '),
+                inline: false
+            });
         }
 
         try {
@@ -208,46 +187,60 @@ export class LoggingService {
         }
     }
 
-    async logError(error: string, context?: string): Promise<void> {
+    async logRoleRemoval(member: any, removedRoles: string[], moderator: string): Promise<void> {
+        if (!this.logChannel) return;
+
+        const embed = new EmbedBuilder()
+            .setTitle('➖ Honeypot Roles Removed')
+            .setColor(0x00AA00)
+            .addFields(
+                { name: 'User', value: `${member.user.tag} (${member.user.id})`, inline: true },
+                { name: 'Moderator', value: moderator, inline: true },
+                { name: 'Roles Removed', value: removedRoles.map(id => `<@&${id}>`).join(', '), inline: false }
+            )
+            .setTimestamp()
+            .setFooter({ text: 'Honeypot Bot - Role Removal' });
+
+        // Only set thumbnail if member has displayAvatarURL method
+        if (member.user && typeof member.user.displayAvatarURL === 'function') {
+            embed.setThumbnail(member.user.displayAvatarURL());
+        }
+
+        try {
+            await this.logChannel.send({ embeds: [embed] });
+        } catch (error) {
+            console.error('❌ Failed to send role removal log:', error);
+        }
+    }
+
+    async logError(error: string, context: string): Promise<void> {
         if (!this.logChannel) return;
 
         const embed = new EmbedBuilder()
             .setTitle('❌ Bot Error')
             .setColor(0xFF0000)
             .addFields(
-                { name: 'Error', value: error.substring(0, 1024), inline: false }
+                { name: 'Context', value: context, inline: false },
+                { name: 'Error', value: error.substring(0, 1000), inline: false }
             )
             .setTimestamp()
-            .setFooter({ text: 'Honeypot Bot Error' });
-
-        if (context) {
-            embed.addFields({ name: 'Context', value: context.substring(0, 1024), inline: false });
-        }
+            .setFooter({ text: 'Honeypot Bot - Error' });
 
         try {
             await this.logChannel.send({ embeds: [embed] });
-        } catch (logError) {
-            console.error('❌ Failed to send error log:', logError);
+        } catch (error) {
+            console.error('❌ Failed to send error log:', error);
         }
     }
 
-    // Utility method to check if logging is enabled
-    public isEnabled(): boolean {
-        return this.logChannel !== null;
-    }
+    // Simple text log for less important events
+    async logSimple(message: string): Promise<void> {
+        if (!this.logChannel) return;
 
-    // Method to update log channel (useful for admin commands)
-    async setLogChannel(channelId: string): Promise<boolean> {
         try {
-            const channel = await this.client.channels.fetch(channelId);
-            if (channel?.isTextBased()) {
-                this.logChannel = channel as TextChannel;
-                return true;
-            }
-            return false;
+            await this.logChannel.send(`📝 ${message}`);
         } catch (error) {
-            console.error('❌ Failed to set log channel:', error);
-            return false;
+            console.error('❌ Failed to send simple log:', error);
         }
     }
 }
