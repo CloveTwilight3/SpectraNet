@@ -2,6 +2,7 @@
 import { GuildMember, EmbedBuilder } from 'discord.js';
 import { CONFIG } from '../config';
 import { DatabaseManager } from '../database/DatabaseManager';
+import { LoggingService } from './LoggingService';
 
 interface PendingBan {
     userId: string;
@@ -18,7 +19,10 @@ export class ModerationService {
     private pendingBans: Map<string, PendingBan> = new Map();
     private onboardingService?: any; // Will be set by OnboardingDetectionService
     
-    constructor(private database: DatabaseManager) {}
+    constructor(
+        private database: DatabaseManager, 
+        private loggingService?: LoggingService
+    ) {}
 
     setOnboardingService(service: any): void {
         this.onboardingService = service;
@@ -38,6 +42,10 @@ export class ModerationService {
 
         } catch (error) {
             console.error(`❌ Failed to timeout ${member.user.tag}:`, error);
+            await this.loggingService?.logError(
+                `Failed to timeout ${member.user.tag}: ${error}`,
+                `Role: ${roleId}, Duration: ${duration}ms`
+            );
         }
     }
 
@@ -55,6 +63,10 @@ export class ModerationService {
 
         } catch (error) {
             console.error(`❌ Failed to temp-ban ${member.user.tag}:`, error);
+            await this.loggingService?.logError(
+                `Failed to temp-ban ${member.user.tag}: ${error}`,
+                `Role: ${roleId}, Duration: ${duration}ms`
+            );
         }
     }
 
@@ -77,6 +89,9 @@ export class ModerationService {
 
         const durationDays = Math.round(duration / (24 * 60 * 60 * 1000));
         console.log(`⏱️ Successfully timed out ${member.user.tag} (${member.id}) for ${durationDays} days - Role: ${roleId}`);
+
+        // Log to Discord channel
+        await this.loggingService?.logTimeout(member, roleId, duration);
     }
 
     // Made public so OnboardingDetectionService can call it directly
@@ -108,6 +123,9 @@ export class ModerationService {
         // Add to database for tracking
         const unbanAt = new Date(Date.now() + duration);
         await this.database.addTempBan(member.user.id, member.guild.id, roleId, unbanAt, CONFIG.BAN_REASONS.ROLE_TEMPBAN);
+
+        // Log to Discord channel
+        await this.loggingService?.logTempBan(member, roleId, duration);
     }
 
     async banMember(member: GuildMember, reason: string): Promise<void> {
@@ -135,8 +153,15 @@ export class ModerationService {
 
             console.log(`🔨 Successfully banned ${member.user.tag} (${member.id}) - Reason: ${reason}`);
 
+            // Log to Discord channel
+            await this.loggingService?.logPermanentBan(member, reason);
+
         } catch (error) {
             console.error(`❌ Failed to ban ${member.user.tag}:`, error);
+            await this.loggingService?.logError(
+                `Failed to ban ${member.user.tag}: ${error}`,
+                `Reason: ${reason}`
+            );
         }
     }
 
