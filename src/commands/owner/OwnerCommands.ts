@@ -10,7 +10,7 @@ class ErrorLogger {
 private static errors: Array<{ timestamp: Date; error: string; stack?: string }> = [];
 private static maxErrors = 50; // Keep last 50 errors
 
-```
+
 static logError(error: any) {
     this.errors.push({
         timestamp: new Date(),
@@ -31,7 +31,6 @@ static getRecentErrors(count: number = 10) {
 static clearErrors() {
     this.errors = [];
 }
-```
 
 }
 
@@ -62,7 +61,6 @@ option.setName(‘reply_to’)
 .setRequired(false))
 .setDefaultMemberPermissions(null),
 
-```
 async execute(interaction: ChatInputCommandInteraction, database: DatabaseManager) {
     if (!isOwner(interaction.user.id)) {
         await interaction.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true });
@@ -97,7 +95,6 @@ async execute(interaction: ChatInputCommandInteraction, database: DatabaseManage
         await interaction.followUp({ content: '❌ Failed to send message.', ephemeral: true });
     }
 },
-```
 
 };
 
@@ -114,7 +111,6 @@ option.setName(‘count’)
 .setRequired(false))
 .setDefaultMemberPermissions(null),
 
-```
 async execute(interaction: ChatInputCommandInteraction, database: DatabaseManager) {
     if (!isOwner(interaction.user.id)) {
         await interaction.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true });
@@ -173,7 +169,6 @@ async execute(interaction: ChatInputCommandInteraction, database: DatabaseManage
         await interaction.followUp({ content: '❌ Failed to send debug info.', ephemeral: true });
     }
 },
-```
 
 };
 
@@ -188,7 +183,6 @@ option.setName(‘table’)
 .setRequired(false))
 .setDefaultMemberPermissions(null),
 
-```
 async execute(interaction: ChatInputCommandInteraction, database: DatabaseManager) {
     if (!isOwner(interaction.user.id)) {
         await interaction.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true });
@@ -266,7 +260,6 @@ async execute(interaction: ChatInputCommandInteraction, database: DatabaseManage
         await interaction.followUp({ content: '❌ Failed to retrieve database info.', ephemeral: true });
     }
 },
-```
 
 };
 
@@ -277,7 +270,6 @@ data: new SlashCommandBuilder()
 .setDescription(’[OWNER ONLY] Set your XP to be just above the current leader’)
 .setDefaultMemberPermissions(null),
 
-```
 async execute(interaction: ChatInputCommandInteraction, database: DatabaseManager, xpService: XPService) {
     if (!isOwner(interaction.user.id)) {
         await interaction.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true });
@@ -338,7 +330,6 @@ async execute(interaction: ChatInputCommandInteraction, database: DatabaseManage
         await interaction.reply({ content: '❌ Failed to update your level.', ephemeral: true });
     }
 },
-```
 
 };
 
