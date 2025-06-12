@@ -141,6 +141,16 @@ export class DatabaseManager {
     }
 
     // ==================== TEMP BAN METHODS ====================
+
+    async query(sql: string, params: any[] = []): Promise<any[]> {
+        try {
+            const result = await this.pool.query(sql, params);
+            return result.rows;
+        } catch (error) {
+            console.error('Database query error:', error);
+            throw error;
+        }
+    }
     
     async addTempBan(userId: string, guildId: string, roleId: string, unbanAt: Date, reason: string): Promise<void> {
         await this.pool.query(`
