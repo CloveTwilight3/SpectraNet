@@ -21,15 +21,15 @@ import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
 
 export class HoneypotBot {
     private client: Client;
-    private database: DatabaseManager;
-    private commandHandler: CommandHandler;
-    private eventHandler: EventHandler;
-    private moderationService: ModerationService;
-    private manualUnbanService: ManualUnbanService;
-    private unbanService: UnbanService;
-    private xpService: XPService;
-    private onboardingService: OnboardingDetectionService;
-    private loggingService: LoggingService;
+    private database!: DatabaseManager;
+    private commandHandler!: CommandHandler;
+    private eventHandler!: EventHandler;
+    private moderationService!: ModerationService;
+    private manualUnbanService!: ManualUnbanService;
+    private unbanService!: UnbanService;
+    private xpService!: XPService;
+    private onboardingService!: OnboardingDetectionService;
+    private loggingService!: LoggingService;
 
     constructor() {
         this.client = new Client({
