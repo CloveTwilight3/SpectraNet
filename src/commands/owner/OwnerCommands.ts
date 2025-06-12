@@ -1,10 +1,5 @@
 // src/commands/owner/OwnerCommands.ts
-import { 
-    SlashCommandBuilder, 
-    ChatInputCommandInteraction, 
-    EmbedBuilder, 
-    PermissionFlagsBits 
-} from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import { DatabaseManager } from '../../database/DatabaseManager';
 import { XPService } from '../../services/XPService';
 
@@ -12,11 +7,7 @@ const OWNER_ID = '1025770042245251122';
 
 // Console error storage for debug command
 class ErrorLogger {
-    private static errors: Array<{ 
-        timestamp: Date; 
-        error: string; 
-        stack?: string 
-    }> = [];
+    private static errors: Array<{ timestamp: Date; error: string; stack?: string }> = [];
     private static maxErrors = 50;
 
     static logError(error: any): void {
@@ -105,7 +96,9 @@ export const echoCommand = {
                     });
                 }
             } else {
-                await interaction.channel?.send(message);
+                if (interaction.channel && 'send' in interaction.channel) {
+                    await interaction.channel.send(message);
+                }
             }
         } catch (error) {
             console.error('Error in echo command:', error);
@@ -117,7 +110,7 @@ export const echoCommand = {
     }
 };
 
-// Debug command
+// Debug command (no changes needed)
 export const debugCommand = {
     data: new SlashCommandBuilder()
         .setName('debug')
@@ -197,7 +190,7 @@ export const debugCommand = {
     }
 };
 
-// Database command
+// Database command - Updated for PostgreSQL
 export const dbCommand = {
     data: new SlashCommandBuilder()
         .setName('db')
@@ -229,6 +222,13 @@ export const dbCommand = {
             const user = await interaction.client.users.fetch(OWNER_ID);
             
             if (specificTable) {
+                // Validate table name to prevent SQL injection
+                const validTables = ['temp_bans', 'user_xp', 'level_roles'];
+                if (!validTables.includes(specificTable)) {
+                    await user.send('❌ Invalid table name. Valid tables: ' + validTables.join(', '));
+                    return;
+                }
+
                 const results = await database.query(`SELECT * FROM ${specificTable} LIMIT 50`);
                 
                 const embed = new EmbedBuilder()
@@ -254,9 +254,13 @@ export const dbCommand = {
                     await user.send('No data found in this table.');
                 }
             } else {
+                // Get all tables overview using PostgreSQL system tables
                 const tables = await database.query(`
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+                    SELECT table_name as name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_type = 'BASE TABLE'
+                    ORDER BY table_name
                 `);
 
                 const embed = new EmbedBuilder()
@@ -275,6 +279,7 @@ export const dbCommand = {
 
                 await user.send({ embeds: [embed] });
 
+                // Send sample data from each table
                 for (const table of tables) {
                     const sampleData = await database.query(`SELECT * FROM ${table.name} LIMIT 5`);
                     if (sampleData.length > 0) {
@@ -293,7 +298,7 @@ export const dbCommand = {
     }
 };
 
-// Level top command
+// Level top command - Updated for PostgreSQL
 export const leveltopCommand = {
     data: new SlashCommandBuilder()
         .setName('leveltop')
@@ -317,7 +322,7 @@ export const leveltopCommand = {
             const topUsers = await database.query(`
                 SELECT user_id, xp, level 
                 FROM user_xp 
-                WHERE guild_id = ? 
+                WHERE guild_id = $1 
                 ORDER BY xp DESC 
                 LIMIT 5
             `, [interaction.guildId]);
@@ -330,7 +335,6 @@ export const leveltopCommand = {
                 return;
             }
 
-            const ownerData = topUsers.find(user => user.user_id === OWNER_ID);
             const currentLeader = topUsers[0];
 
             if (currentLeader.user_id === OWNER_ID) {
@@ -344,10 +348,16 @@ export const leveltopCommand = {
             const newXP = currentLeader.xp + 100;
             const newLevel = xpService.calculateLevel(newXP);
 
+            // Use PostgreSQL UPSERT syntax
             await database.query(`
-                INSERT OR REPLACE INTO user_xp (user_id, guild_id, xp, level, last_message)
-                VALUES (?, ?, ?, ?, ?)
-            `, [OWNER_ID, interaction.guildId, newXP, newLevel, Date.now()]);
+                INSERT INTO user_xp (user_id, guild_id, xp, level, last_message_at, last_xp_gain, updated_at)
+                VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET 
+                    xp = $3,
+                    level = $4,
+                    updated_at = NOW()
+            `, [OWNER_ID, interaction.guildId, newXP, newLevel]);
 
             const embed = new EmbedBuilder()
                 .setTitle('🏆 Level Boost Complete!')
