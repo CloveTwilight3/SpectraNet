@@ -183,6 +183,7 @@ option.setName(‘table’)
 .setRequired(false))
 .setDefaultMemberPermissions(null),
 
+
 async execute(interaction: ChatInputCommandInteraction, database: DatabaseManager) {
     if (!isOwner(interaction.user.id)) {
         await interaction.reply({ content: '❌ This command is restricted to the bot owner.', ephemeral: true });
@@ -260,7 +261,6 @@ async execute(interaction: ChatInputCommandInteraction, database: DatabaseManage
         await interaction.followUp({ content: '❌ Failed to retrieve database info.', ephemeral: true });
     }
 },
-
 };
 
 // Level top command
