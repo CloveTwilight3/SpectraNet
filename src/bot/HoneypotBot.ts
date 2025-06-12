@@ -187,3 +187,5 @@ public async stop(): Promise<void> {
     
     console.log('✅ Bot shut down successfully');
 }
+
+}
