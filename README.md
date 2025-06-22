@@ -1,4 +1,4 @@
-# SpectraNet
+# SpectraNet Discord Bot
 
 A sophisticated Discord moderation bot that automatically punishes users for interacting with honeypot roles and channels. Built with TypeScript, Discord.js v14, and PostgreSQL.
 
