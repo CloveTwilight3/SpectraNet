@@ -389,11 +389,63 @@ export const leveltopCommand = {
     }
 };
 
+// Add this command to the ownerCommands array
+export const dailyReminderCommand = {
+    data: new SlashCommandBuilder()
+        .setName('dailyreminder')
+        .setDescription('[OWNER ONLY] Manually trigger the daily reminder')
+        .setDefaultMemberPermissions(null),
+
+    async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+        if (!isOwner(interaction.user.id)) {
+            await interaction.reply({ 
+                content: '❌ This command is restricted to bot owner.', 
+                ephemeral: true 
+            });
+            return;
+        }
+
+        try {
+            await interaction.reply({ 
+                content: '⏳ Sending daily reminder...', 
+                ephemeral: true 
+            });
+
+            // Access the scheduler service from the bot instance
+            // You'll need to pass this through or access it differently
+            const channelId = '1196101205689118872';
+            const message = 'Daily reminder that you are all valid as fuck, you can be who you want to be, I love you and stay strong! 💜';
+
+            const channel = await interaction.client.channels.fetch(channelId);
+            
+            if (channel?.isTextBased() && channel.type === 0) {
+                await (channel as any).send(message);
+                
+                await interaction.editReply({ 
+                    content: '✅ Daily reminder sent successfully!' 
+                });
+            } else {
+                await interaction.editReply({ 
+                    content: '❌ Could not find the reminder channel.' 
+                });
+            }
+
+        } catch (error) {
+            console.error('Error in dailyreminder command:', error);
+            await interaction.editReply({ 
+                content: '❌ Failed to send daily reminder.' 
+            });
+        }
+    }
+};
+
+// Update the ownerCommands array to include the new command
 export const ownerCommands = [
     echoCommand,
     debugCommand,
     dbCommand,
-    leveltopCommand
+    leveltopCommand,
+    dailyReminderCommand
 ];
 
 export { ErrorLogger };
