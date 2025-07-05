@@ -58,6 +58,7 @@ export class HoneypotBot {
         this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
+        this.schedulerService = new SchedulerService(this.client);
     }
 
     private connectServices(): void {
