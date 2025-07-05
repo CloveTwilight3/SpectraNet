@@ -18,6 +18,7 @@ import { OnboardingDetectionService } from '../services/OnboardingDetectionServi
 import { LoggingService } from '../services/LoggingService';
 import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
+import { SchedulerService } from '../services/SchedulerService';
 
 export class HoneypotBot {
     private client: Client;
@@ -30,6 +31,7 @@ export class HoneypotBot {
     private xpService!: XPService;
     private onboardingService!: OnboardingDetectionService;
     private loggingService!: LoggingService;
+    private schedulerService!: SchedulerService;
 
     constructor() {
         this.client = new Client({
@@ -64,6 +66,7 @@ export class HoneypotBot {
         this.moderationService.setOnboardingService(this.onboardingService);
         this.moderationService.setLoggingService(this.loggingService);
         this.unbanService.setLoggingService(this.loggingService);
+        this.schedulerService.setLoggingService(this.loggingService);
     }
 
     private setupEventListeners(): void {
@@ -93,6 +96,7 @@ export class HoneypotBot {
         
         this.onboardingService.setupOnboardingDetection();
         this.unbanService.start();
+        this.schedulerService.start();
 
         const honeypotRoleCount = Object.keys(CONFIG.HONEYPOT_ROLES).length;
         const honeypotChannelCount = CONFIG.HONEYPOT_CHANNELS.length;
@@ -187,6 +191,7 @@ export class HoneypotBot {
         
         this.unbanService.stop();
         this.moderationService.cleanup();
+        this.schedulerService.stop();
         
         await this.database.close();
         await this.client.destroy();
