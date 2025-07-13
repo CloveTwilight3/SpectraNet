@@ -104,6 +104,12 @@ export class EventHandler {
             // Double-check: Don't give XP in honeypot channels (should already be handled above)
             if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) return;
 
+            // Check if TTS is enabled for this channel
+                    const ttsChannelId = this.getTTSChannel(message.guild.id);
+                    if (ttsChannelId === message.channel.id && this.ttsService?.isConnected(message.guild.id)) {
+                        await this.ttsService.queueMessage(message.guild.id, `${message.author.displayName}: ${message.content}`);
+        }
+
             // Process XP gain
             await this.xpService.processMessage(message);
 
