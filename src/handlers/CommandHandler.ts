@@ -7,6 +7,8 @@ import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
 
 export class CommandHandler {
+    private ttsService!: TTSService;
+    private ttsChannels: Map<string, string> = new Map(); // guild -> channel mapping
     private xpService: XPService;
     private unbanService: ManualUnbanService;
 
@@ -17,6 +19,7 @@ export class CommandHandler {
     ) {
         this.xpService = new XPService(database);
         this.unbanService = new ManualUnbanService(database, moderationService);
+        this.ttsService = new TTSService();
     }
 
     async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -68,6 +71,20 @@ export class CommandHandler {
                     break;
                 case 'addxp':
                     await this.handleAddXPCommand(interaction);
+                    break;
+
+                // TTS Commands
+                case 'join':
+                    await this.handleJoinCommand(interaction);
+                    break;
+                case 'leave':
+                    await this.handleLeaveCommand(interaction);
+                    break;
+                case 'speak':
+                    await this.handleSpeakCommand(interaction);
+                    break;
+                case 'tts':
+                    await this.handleTTSToggleCommand(interaction);
                     break;
             }
         } catch (error) {
@@ -715,5 +732,89 @@ export class CommandHandler {
         
         const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
         return `[${progressBar}] ${percentage.toFixed(1)}%`;
+    }
+    
+    // TTS
+    private async handleJoinCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const member = interaction.member as any;
+        const voiceChannel = member?.voice?.channel;
+
+        if (!voiceChannel) {
+            await interaction.reply({
+                content: '❌ You need to be in a voice channel first!',
+                ephemeral: true,
+            });
+            return;
+        }
+
+        const success = await this.ttsService.joinChannel(voiceChannel);
+    
+        if (success) {
+            await interaction.reply({
+                content: `✅ Joined **${voiceChannel.name}** for TTS!`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: '❌ Failed to join voice channel. Check permissions.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleLeaveCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        await this.ttsService.leaveChannel(interaction.guildId!);
+        this.ttsChannels.delete(interaction.guildId!);
+    
+        await interaction.reply({
+            content: '✅ Left voice channel and disabled TTS.',
+            ephemeral: true,
+        });
+    }
+
+    private async handleSpeakCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const text = interaction.options.getString('text', true);
+        const language = interaction.options.getString('language') || 'en';
+
+        if (!this.ttsService.isConnected(interaction.guildId!)) {
+            await interaction.reply({
+                content: '❌ Bot is not connected to a voice channel. Use `/join` first.',
+                ephemeral: true,
+            });
+            return;
+        }
+
+        const success = await this.ttsService.speak(interaction.guildId!, text, { language });
+    
+        if (success) {
+            await interaction.reply({
+                content: `🔊 Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: '❌ Failed to generate TTS.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleTTSToggleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const channel = interaction.options.getChannel('channel', true);
+    
+        if (!channel.isTextBased()) {
+            await interaction.reply({
+                content: '❌ Please select a text channel.',
+                ephemeral: true,
+            });
+            return;
+        }
+
+        this.ttsChannels.set(interaction.guildId!, channel.id);
+    
+        await interaction.reply({
+            content: `✅ TTS enabled for ${channel.toString()}. Messages will be read aloud when bot is in voice channel.`,
+            ephemeral: true,
+        });
     }
 }
