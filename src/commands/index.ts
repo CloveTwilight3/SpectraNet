@@ -140,4 +140,48 @@ export const commands = [
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON(),
+
+
+// TTS Commands
+    new SlashCommandBuilder()
+        .setName('join')
+        .setDescription('Join your current voice channel for TTS')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Connect)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('leave')
+        .setDescription('Leave the current voice channel')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Connect)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('speak')
+        .setDescription('Convert text to speech in voice channel')
+        .addStringOption(option =>
+            option.setName('text')
+                .setDescription('Text to convert to speech')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('language')
+                .setDescription('Language for TTS')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'English', value: 'en' },
+                    { name: 'Spanish', value: 'es' },
+                    { name: 'French', value: 'fr' },
+                    { name: 'German', value: 'de' }
+            ))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Connect)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('tts')
+        .setDescription('Toggle TTS for side channel messages')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('Text channel to read messages from')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+        .toJSON(),
 ];
