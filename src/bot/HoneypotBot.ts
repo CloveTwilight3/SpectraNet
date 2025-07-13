@@ -32,6 +32,7 @@ export class HoneypotBot {
     private onboardingService!: OnboardingDetectionService;
     private loggingService!: LoggingService;
     private schedulerService!: SchedulerService;
+    private ttsService!: TTSService;
 
     constructor() {
         this.client = new Client({
@@ -59,6 +60,7 @@ export class HoneypotBot {
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
         this.schedulerService = new SchedulerService(this.client);
+        this.ttsService = new TTSService();
     }
 
     private connectServices(): void {
@@ -68,6 +70,7 @@ export class HoneypotBot {
         this.moderationService.setLoggingService(this.loggingService);
         this.unbanService.setLoggingService(this.loggingService);
         this.schedulerService.setLoggingService(this.loggingService);
+                            this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);
     }
 
     private setupEventListeners(): void {
