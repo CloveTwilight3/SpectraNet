@@ -5,9 +5,9 @@ import { DatabaseManager } from '../database/DatabaseManager';
 import { ModerationService } from '../services/ModerationService';
 import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
+import { TTSService } from '../services/TTSService';
 
 export class CommandHandler {
-    private ttsService!: TTSService;
     private ttsChannels: Map<string, string> = new Map(); // guild -> channel mapping
     private xpService: XPService;
     private unbanService: ManualUnbanService;
@@ -15,11 +15,11 @@ export class CommandHandler {
     constructor(
         private client: any, 
         private database: DatabaseManager,
-        private moderationService: ModerationService
+        private moderationService: ModerationService,
+        private ttsService: TTSService
     ) {
         this.xpService = new XPService(database);
         this.unbanService = new ManualUnbanService(database, moderationService);
-        this.ttsService = new TTSService();
     }
 
     async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -800,21 +800,22 @@ export class CommandHandler {
     }
 
     private async handleTTSToggleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-        const channel = interaction.options.getChannel('channel', true);
-    
-        if (!channel.isTextBased()) {
-            await interaction.reply({
-                content: '❌ Please select a text channel.',
-                ephemeral: true,
-            });
-            return;
-        }
+    const channel = interaction.options.getChannel('channel', true);
 
-        this.ttsChannels.set(interaction.guildId!, channel.id);
-    
+    // Fix this check:
+    if (channel.type !== 0) { // 0 = GUILD_TEXT
         await interaction.reply({
-            content: `✅ TTS enabled for ${channel.toString()}. Messages will be read aloud when bot is in voice channel.`,
+            content: '❌ Please select a text channel.',
             ephemeral: true,
         });
+        return;
     }
+
+    this.ttsChannels.set(interaction.guildId!, channel.id);
+
+    await interaction.reply({
+        content: `✅ TTS enabled for ${channel.toString()}. Messages will be read aloud when bot is in voice channel.`,
+        ephemeral: true,
+    });
+}
 }

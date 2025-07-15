@@ -19,6 +19,7 @@ import { LoggingService } from '../services/LoggingService';
 import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
 import { SchedulerService } from '../services/SchedulerService';
+import { TTSService } from '../services/TTSService';
 
 export class HoneypotBot {
     private client: Client;
@@ -56,11 +57,9 @@ export class HoneypotBot {
         this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
         this.onboardingService = new OnboardingDetectionService(this.client);
-        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService);
-        this.eventHandler = new EventHandler(this.moderationService, this.xpService);
+        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);        this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
         this.schedulerService = new SchedulerService(this.client);
-        this.ttsService = new TTSService();
     }
 
     private connectServices(): void {

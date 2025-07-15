@@ -105,10 +105,9 @@ export class EventHandler {
             if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) return;
 
             // Check if TTS is enabled for this channel
-                    const ttsChannelId = this.getTTSChannel(message.guild.id);
-                    if (ttsChannelId === message.channel.id && this.ttsService?.isConnected(message.guild.id)) {
-                        await this.ttsService.queueMessage(message.guild.id, `${message.author.displayName}: ${message.content}`);
-        }
+            //        const ttsChannelId = this.getTTSChannel(message.guild.id);
+            //        if (ttsChannelId === message.channel.id && this.ttsService?.isConnected(message.guild.id)) {
+            //            await this.ttsService.queueMessage(message.guild.id, `${message.author.displayName}: ${message.content}`);
 
             // Process XP gain
             await this.xpService.processMessage(message);
