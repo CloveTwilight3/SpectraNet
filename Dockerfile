@@ -1,5 +1,13 @@
 FROM node:18-alpine
 
+# Install FFmpeg and other dependencies needed for TTS
+RUN apk add --no-cache \
+    ffmpeg \
+    python3 \
+    make \
+    g++ \
+    && ln -sf python3 /usr/bin/python
+
 # Set working directory
 WORKDIR /app
 
@@ -16,8 +24,8 @@ RUN npm run build
 # Remove dev dependencies to reduce image size
 RUN npm ci --only=production && npm cache clean --force
 
-# Create logs directory
-RUN mkdir -p logs
+# Create logs and temp directories
+RUN mkdir -p logs temp
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs
