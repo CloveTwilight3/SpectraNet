@@ -9,10 +9,12 @@ import {
     entersState
 } from '@discordjs/voice';
 import { VoiceChannel, VoiceBasedChannel } from 'discord.js';
-import * as gtts from 'gtts';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// Import gtts using require to avoid type issues
+const gtts = require('gtts');
 
 export interface TTSOptions {
     language?: string;
@@ -41,7 +43,7 @@ export class TTSService {
             const connection = joinVoiceChannel({
                 channelId: channel.id,
                 guildId: channel.guild.id,
-                adapterCreator: channel.guild.voiceAdapterCreator,
+                adapterCreator: channel.guild.voiceAdapterCreator as any, // Type assertion to fix compatibility
             });
 
             // Wait for connection to be ready
@@ -158,17 +160,21 @@ export class TTSService {
      */
     private async generateTTS(text: string, options: TTSOptions = {}): Promise<string> {
         return new Promise((resolve, reject) => {
-            const tts = new gtts(text, options.language || 'en');
-            const filename = `tts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp3`;
-            const filepath = path.join(__dirname, '../../temp', filename);
+            try {
+                const ttsInstance = new gtts(text, options.language || 'en');
+                const filename = `tts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp3`;
+                const filepath = path.join(__dirname, '../../temp', filename);
 
-            tts.save(filepath, (err: any) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(filepath);
-                }
-            });
+                ttsInstance.save(filepath, (err: any) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(filepath);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
         });
     }
 

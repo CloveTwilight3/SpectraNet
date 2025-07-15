@@ -802,7 +802,7 @@ export class CommandHandler {
     private async handleTTSToggleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
     const channel = interaction.options.getChannel('channel', true);
 
-    // Fix this check:
+    // Fix the type check
     if (channel.type !== 0) { // 0 = GUILD_TEXT
         await interaction.reply({
             content: '❌ Please select a text channel.',
