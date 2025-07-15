@@ -16,10 +16,10 @@ import { UnbanService } from '../services/UnbanService';
 import { XPService } from '../services/XPService';
 import { OnboardingDetectionService } from '../services/OnboardingDetectionService';
 import { LoggingService } from '../services/LoggingService';
+import { TTSService } from '../services/TTSService';
+import { SchedulerService } from '../services/SchedulerService';
 import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
-import { SchedulerService } from '../services/SchedulerService';
-import { TTSService } from '../services/TTSService';
 
 export class HoneypotBot {
     private client: Client;
@@ -42,6 +42,7 @@ export class HoneypotBot {
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.MessageContent,
+                GatewayIntentBits.GuildVoiceStates, // Added for voice channel detection
             ],
         });
 
@@ -51,28 +52,45 @@ export class HoneypotBot {
     }
 
     private initializeServices(): void {
+        console.log('🔧 Initializing services...');
+        
         this.database = new DatabaseManager();
         this.loggingService = new LoggingService(this.client);
         this.moderationService = new ModerationService(this.database);
         this.manualUnbanService = new ManualUnbanService(this.database, this.moderationService);
         this.xpService = new XPService(this.database);
         this.onboardingService = new OnboardingDetectionService(this.client);
-        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);        this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         this.unbanService = new UnbanService(this.client, this.database);
         this.schedulerService = new SchedulerService(this.client);
+        this.ttsService = new TTSService();
+        
+        // Initialize handlers after all services are created
+        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);
+        this.eventHandler = new EventHandler(this.moderationService, this.xpService);
+        
+        console.log('✅ All services initialized');
     }
 
     private connectServices(): void {
+        console.log('🔗 Connecting services...');
+        
+        // Connect core services
         this.onboardingService.setModerationService(this.moderationService);
         this.onboardingService.setLoggingService(this.loggingService);
         this.moderationService.setOnboardingService(this.onboardingService);
         this.moderationService.setLoggingService(this.loggingService);
         this.unbanService.setLoggingService(this.loggingService);
         this.schedulerService.setLoggingService(this.loggingService);
-                            this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);
+        
+        // Connect TTS to EventHandler
+        this.eventHandler.setTTSService(this.ttsService, this.commandHandler.getTTSChannels);
+        
+        console.log('✅ All services connected');
     }
 
     private setupEventListeners(): void {
+        console.log('📡 Setting up event listeners...');
+        
         this.client.once(Events.ClientReady, async () => {
             await this.onBotReady();
         });
@@ -83,6 +101,8 @@ export class HoneypotBot {
             if (!interaction.isChatInputCommand()) return;
             await this.handleInteraction(interaction);
         });
+        
+        console.log('✅ Event listeners configured');
     }
 
     private async onBotReady(): Promise<void> {
@@ -91,20 +111,24 @@ export class HoneypotBot {
         console.log(`🔍 Monitoring ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels`);
         console.log(`✨ XP system enabled`);
         console.log(`🎯 Onboarding detection enabled (rules agreement)`);
+        console.log(`🔊 TTS system enabled`);
         console.log(`🛠️ Owner commands loaded (${ownerCommands.length} commands)`);
         
+        // Initialize database and services
         await this.database.initialize();
         await this.loggingService.initialize();
         await this.registerCommands();
         
+        // Start background services
         this.onboardingService.setupOnboardingDetection();
         this.unbanService.start();
         this.schedulerService.start();
 
+        // Log startup to Discord
         const honeypotRoleCount = Object.keys(CONFIG.HONEYPOT_ROLES).length;
         const honeypotChannelCount = CONFIG.HONEYPOT_CHANNELS.length;
         await this.loggingService.logSimple(
-            `🤖 Honeypot Bot started successfully! Monitoring ${honeypotRoleCount} honeypot roles and ${honeypotChannelCount} channels.`
+            `🤖 Honeypot Bot started successfully! Monitoring ${honeypotRoleCount} honeypot roles and ${honeypotChannelCount} channels. TTS system ready.`
         );
     }
 
@@ -161,6 +185,8 @@ export class HoneypotBot {
     }
 
     public async start(): Promise<void> {
+        console.log('🚀 Starting Honeypot Bot...');
+        
         this.validateConfiguration();
 
         try {
@@ -173,6 +199,8 @@ export class HoneypotBot {
     }
 
     private validateConfiguration(): void {
+        console.log('🔍 Validating configuration...');
+        
         if (!CONFIG.TOKEN) {
             console.error('❌ DISCORD_TOKEN not found in environment variables');
             process.exit(1);
@@ -185,6 +213,8 @@ export class HoneypotBot {
         if (CONFIG.HONEYPOT_CHANNELS.length === 0) {
             console.warn('⚠️ No honeypot channels configured');
         }
+        
+        console.log('✅ Configuration validation complete');
     }
 
     public async stop(): Promise<void> {
@@ -192,13 +222,34 @@ export class HoneypotBot {
         
         await this.loggingService.logSimple('🛑 Honeypot Bot shutting down...');
         
+        // Stop background services
         this.unbanService.stop();
         this.moderationService.cleanup();
         this.schedulerService.stop();
         
+        // Close database connection
         await this.database.close();
+        
+        // Destroy Discord client
         await this.client.destroy();
         
         console.log('✅ Bot shut down successfully');
+    }
+
+    // Getter methods for accessing services (useful for debugging/testing)
+    public getDatabase(): DatabaseManager {
+        return this.database;
+    }
+
+    public getClient(): Client {
+        return this.client;
+    }
+
+    public getTTSService(): TTSService {
+        return this.ttsService;
+    }
+
+    public getModerationService(): ModerationService {
+        return this.moderationService;
     }
 }

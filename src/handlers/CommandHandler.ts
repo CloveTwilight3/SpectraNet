@@ -22,6 +22,11 @@ export class CommandHandler {
         this.unbanService = new ManualUnbanService(database, moderationService);
     }
 
+    // Getter for TTS channels (so EventHandler can access it)
+    get getTTSChannels(): Map<string, string> {
+        return this.ttsChannels;
+    }
+
     async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void> {
         try {
             switch (interaction.commandName) {
@@ -734,88 +739,137 @@ export class CommandHandler {
         return `[${progressBar}] ${percentage.toFixed(1)}%`;
     }
     
-    // TTS
+    // TTS COMMANDS
     private async handleJoinCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-        const member = interaction.member as any;
-        const voiceChannel = member?.voice?.channel;
+        try {
+            // Get the member properly
+            const member = await interaction.guild!.members.fetch(interaction.user.id);
+            const voiceChannel = member.voice.channel;
 
-        if (!voiceChannel) {
-            await interaction.reply({
-                content: '❌ You need to be in a voice channel first!',
-                ephemeral: true,
-            });
-            return;
-        }
+            if (!voiceChannel) {
+                await interaction.reply({
+                    content: '❌ You need to be in a voice channel first!',
+                    ephemeral: true,
+                });
+                return;
+            }
 
-        const success = await this.ttsService.joinChannel(voiceChannel);
-    
-        if (success) {
+            const success = await this.ttsService.joinChannel(voiceChannel);
+
+            if (success) {
+                // Automatically enable TTS for this VC's side channel if it exists
+                // Voice channels in Discord can have associated text channels
+                const sideChannelId = voiceChannel.id; // Use the same ID for side channel detection
+                this.ttsChannels.set(interaction.guildId!, sideChannelId);
+
+                await interaction.reply({
+                    content: `✅ Joined **${voiceChannel.name}** for TTS! Side channel monitoring enabled.`,
+                    ephemeral: true,
+                });
+
+                console.log(`🔊 Bot joined ${voiceChannel.name} and enabled TTS for VC side channel`);
+            } else {
+                await interaction.reply({
+                    content: '❌ Failed to join voice channel. Check permissions.',
+                    ephemeral: true,
+                });
+            }
+        } catch (error) {
+            console.error('❌ Error joining voice channel:', error);
             await interaction.reply({
-                content: `✅ Joined **${voiceChannel.name}** for TTS!`,
-                ephemeral: true,
-            });
-        } else {
-            await interaction.reply({
-                content: '❌ Failed to join voice channel. Check permissions.',
+                content: '❌ An error occurred while joining the voice channel.',
                 ephemeral: true,
             });
         }
     }
 
     private async handleLeaveCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-        await this.ttsService.leaveChannel(interaction.guildId!);
-        this.ttsChannels.delete(interaction.guildId!);
-    
-        await interaction.reply({
-            content: '✅ Left voice channel and disabled TTS.',
-            ephemeral: true,
-        });
+        try {
+            await this.ttsService.leaveChannel(interaction.guildId!);
+            this.ttsChannels.delete(interaction.guildId!);
+
+            await interaction.reply({
+                content: '✅ Left voice channel and disabled TTS.',
+                ephemeral: true,
+            });
+
+            console.log(`🔇 Bot left voice channel and disabled TTS in guild ${interaction.guildId}`);
+        } catch (error) {
+            console.error('❌ Error leaving voice channel:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while leaving the voice channel.',
+                ephemeral: true,
+            });
+        }
     }
 
     private async handleSpeakCommand(interaction: ChatInputCommandInteraction): Promise<void> {
         const text = interaction.options.getString('text', true);
         const language = interaction.options.getString('language') || 'en';
 
-        if (!this.ttsService.isConnected(interaction.guildId!)) {
-            await interaction.reply({
-                content: '❌ Bot is not connected to a voice channel. Use `/join` first.',
-                ephemeral: true,
-            });
-            return;
-        }
+        try {
+            if (!this.ttsService.isConnected(interaction.guildId!)) {
+                await interaction.reply({
+                    content: '❌ Bot is not connected to a voice channel. Use `/join` first.',
+                    ephemeral: true,
+                });
+                return;
+            }
 
-        const success = await this.ttsService.speak(interaction.guildId!, text, { language });
-    
-        if (success) {
+            const success = await this.ttsService.speak(interaction.guildId!, text, { language });
+
+            if (success) {
+                await interaction.reply({
+                    content: `🔊 Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+                    ephemeral: true,
+                });
+            } else {
+                await interaction.reply({
+                    content: '❌ Failed to generate TTS.',
+                    ephemeral: true,
+                });
+            }
+        } catch (error) {
+            console.error('❌ Error in speak command:', error);
             await interaction.reply({
-                content: `🔊 Speaking: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
-                ephemeral: true,
-            });
-        } else {
-            await interaction.reply({
-                content: '❌ Failed to generate TTS.',
+                content: '❌ An error occurred while generating speech.',
                 ephemeral: true,
             });
         }
     }
 
     private async handleTTSToggleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-    const channel = interaction.options.getChannel('channel', true);
+        const channel = interaction.options.getChannel('channel', true);
 
-    // Fix the type check
-    if (channel.type !== 0) { // 0 = GUILD_TEXT
-        await interaction.reply({
-            content: '❌ Please select a text channel.',
-            ephemeral: true,
-        });
-        return;
+        try {
+            // Accept both text channels and voice channels (for side chat)
+            if (channel.type !== 0 && channel.type !== 2) { // 0 = GUILD_TEXT, 2 = GUILD_VOICE
+                await interaction.reply({
+                    content: '❌ Please select a text channel or voice channel.',
+                    ephemeral: true,
+                });
+                return;
+            }
+
+            this.ttsChannels.set(interaction.guildId!, channel.id);
+
+            await interaction.reply({
+                content: `✅ TTS enabled for ${channel.toString()}. Messages will be read aloud when bot is in voice channel.`,
+                ephemeral: true,
+            });
+
+            console.log(`🔧 TTS enabled for channel ${channel.name} in guild ${interaction.guildId}`);
+        } catch (error) {
+            console.error('❌ Error in TTS toggle command:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while setting up TTS.',
+                ephemeral: true,
+            });
+        }
     }
 
-    this.ttsChannels.set(interaction.guildId!, channel.id);
-
-    await interaction.reply({
-        content: `✅ TTS enabled for ${channel.toString()}. Messages will be read aloud when bot is in voice channel.`,
-        ephemeral: true,
-    });
-}
+    // Helper method to get TTS channel
+    private getTTSChannel(guildId: string): string | undefined {
+        return this.ttsChannels.get(guildId);
+    }
 }
