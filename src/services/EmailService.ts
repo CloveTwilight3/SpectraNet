@@ -1,5 +1,5 @@
 // src/services/EmailService.ts
-import { Client as MSALClient, ConfidentialClientApplication } from '@azure/msal-node';
+import { ConfidentialClientApplication } from '@azure/msal-node';
 import axios from 'axios';
 import { Client, EmbedBuilder, TextChannel } from 'discord.js';
 import { CONFIG } from '../config';

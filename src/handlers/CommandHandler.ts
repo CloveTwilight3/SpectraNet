@@ -6,20 +6,24 @@ import { ModerationService } from '../services/ModerationService';
 import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
+import { EmailService } from '../services/EmailService'; 
 
 export class CommandHandler {
     private ttsChannels: Map<string, string> = new Map(); // guild -> channel mapping
     private xpService: XPService;
     private unbanService: ManualUnbanService;
+    private emailService: EmailService;
 
     constructor(
         private client: any,
         private database: DatabaseManager,
         private moderationService: ModerationService,
-        private ttsService: TTSService
+        private ttsService: TTSService,
+        emailService: EmailService
     ) {
         this.xpService = new XPService(database);
         this.unbanService = new ManualUnbanService(database, moderationService);
+        this.emailService = emailService;
     }
 
     // Getter for TTS channels (so EventHandler can access it)
