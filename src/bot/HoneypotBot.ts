@@ -20,6 +20,7 @@ import { TTSService } from '../services/TTSService';
 import { SchedulerService } from '../services/SchedulerService';
 import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
+import { EmailService } from '../services/EmailService';
 
 export class HoneypotBot {
     private client: Client;
@@ -34,6 +35,7 @@ export class HoneypotBot {
     private loggingService!: LoggingService;
     private schedulerService!: SchedulerService;
     private ttsService!: TTSService;
+    private emailService!: EmailService;
 
     constructor() {
         this.client = new Client({
@@ -63,9 +65,16 @@ export class HoneypotBot {
         this.unbanService = new UnbanService(this.client, this.database);
         this.schedulerService = new SchedulerService(this.client);
         this.ttsService = new TTSService();
+        this.emailService = new EmailService(this.client);
         
         // Initialize handlers after all services are created
-        this.commandHandler = new CommandHandler(this.client, this.database, this.moderationService, this.ttsService);
+        this.commandHandler = new CommandHandler(
+            this.client,
+            this.database,
+            this.moderationService,
+            this.ttsService,
+            this.emailService
+        );
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         
         console.log('✅ All services initialized');
@@ -81,6 +90,7 @@ export class HoneypotBot {
         this.moderationService.setLoggingService(this.loggingService);
         this.unbanService.setLoggingService(this.loggingService);
         this.schedulerService.setLoggingService(this.loggingService);
+        this.emailService.setLoggingService(this.loggingService);
         
         // Connect TTS to EventHandler
         this.eventHandler.setTTSService(this.ttsService, this.commandHandler.getTTSChannels);
@@ -118,6 +128,7 @@ export class HoneypotBot {
         await this.database.initialize();
         await this.loggingService.initialize();
         await this.registerCommands();
+        await this.emailService.initialize();
         
         // Start background services
         this.onboardingService.setupOnboardingDetection();
@@ -226,6 +237,7 @@ export class HoneypotBot {
         this.unbanService.stop();
         this.moderationService.cleanup();
         this.schedulerService.stop();
+        this.emailService.stop();
         
         // Close database connection
         await this.database.close();

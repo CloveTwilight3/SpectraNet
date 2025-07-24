@@ -13,7 +13,7 @@ export class CommandHandler {
     private unbanService: ManualUnbanService;
 
     constructor(
-        private client: any, 
+        private client: any,
         private database: DatabaseManager,
         private moderationService: ModerationService,
         private ttsService: TTSService
@@ -43,7 +43,7 @@ export class CommandHandler {
                 case 'onboarding':
                     await this.handleOnboardingCommand(interaction);
                     break;
-                    
+
                 // Honeypot management commands
                 case 'pendingbans':
                     await this.handlePendingBansCommand(interaction);
@@ -91,6 +91,18 @@ export class CommandHandler {
                 case 'tts':
                     await this.handleTTSToggleCommand(interaction);
                     break;
+
+                // Email Commands
+                case 'emailstatus':
+                    await this.handleEmailStatusCommand(interaction);
+                    break;
+                case 'emailtest':
+                    await this.handleEmailTestCommand(interaction);
+                    break;
+                case 'emailrestart':
+                    await this.handleEmailRestartCommand(interaction);
+                    break;
+
             }
         } catch (error) {
             console.error('❌ Error handling slash command:', error);
@@ -120,13 +132,13 @@ export class CommandHandler {
 
         await interaction.reply({
             content: `🏓 Pong! Bot latency: ${ping}ms\n` +
-                    `📊 Monitoring:\n` +
-                    `• ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles\n` +
-                    `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n` +
-                    `${onboardingInfo}` +
-                    `• ${pendingBansCount} pending bans\n\n` +
-                    `⚙️ Role Configurations:\n${roleConfigs || 'None configured'}\n\n` +
-                    `🎯 Onboarding Detection: Rules Agreement (5s delay)`,
+                `📊 Monitoring:\n` +
+                `• ${Object.keys(CONFIG.HONEYPOT_ROLES).length} honeypot roles\n` +
+                `• ${CONFIG.HONEYPOT_CHANNELS.length} honeypot channels\n` +
+                `${onboardingInfo}` +
+                `• ${pendingBansCount} pending bans\n\n` +
+                `⚙️ Role Configurations:\n${roleConfigs || 'None configured'}\n\n` +
+                `🎯 Onboarding Detection: Rules Agreement (5s delay)`,
             ephemeral: true,
         });
     }
@@ -229,7 +241,7 @@ export class CommandHandler {
                 const scheduledTimestamp = Math.floor(ban.scheduledAt.getTime() / 1000);
                 const joinedTimestamp = Math.floor(ban.memberJoinedAt.getTime() / 1000);
                 return `<@${ban.userId}> - ${ban.type} scheduled <t:${scheduledTimestamp}:R>\n` +
-                       `  └ Joined: <t:${joinedTimestamp}:R> | Role: <@&${ban.roleId}>`;
+                    `  └ Joined: <t:${joinedTimestamp}:R> | Role: <@&${ban.roleId}>`;
             }).join('\n\n');
 
             const embed = new EmbedBuilder()
@@ -239,7 +251,7 @@ export class CommandHandler {
                 .addFields({
                     name: 'ℹ️ Info',
                     value: 'These users got honeypot roles during their onboarding window (first 10 minutes). ' +
-                           'They will be automatically banned unless they remove the role.',
+                        'They will be automatically banned unless they remove the role.',
                     inline: false
                 })
                 .setTimestamp()
@@ -264,7 +276,7 @@ export class CommandHandler {
             await interaction.deferReply({ ephemeral: true });
 
             const { userId, user } = await this.unbanService.parseUserInput(interaction.guild!, userInput);
-            
+
             const result = await this.unbanService.unbanUser(
                 interaction.guild!,
                 userId,
@@ -280,7 +292,7 @@ export class CommandHandler {
             }
 
             const userName = user?.tag || `User ID: ${userId}`;
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('✅ Manual Unban Completed')
                 .setDescription(`Successfully processed unban for **${userName}**`)
@@ -313,9 +325,9 @@ export class CommandHandler {
 
         try {
             const member = await interaction.guild!.members.fetch(targetUser.id);
-            
+
             let removedRoles: string[];
-            
+
             if (specificRole) {
                 // Remove specific role
                 const success = await this.unbanService.removeSpecificHoneypotRole(member, specificRole.id);
@@ -334,7 +346,7 @@ export class CommandHandler {
             }
 
             const rolesList = removedRoles.map(roleId => `<@&${roleId}>`).join(', ');
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('✅ Honeypot Roles Removed')
                 .setDescription(`Successfully removed honeypot roles from **${targetUser.tag}**`)
@@ -353,7 +365,7 @@ export class CommandHandler {
 
         } catch (error: any) {
             console.error('❌ Error removing honeypot roles:', error);
-            
+
             if (error.message.includes('not configured as a honeypot role')) {
                 await interaction.reply({
                     content: `❌ The specified role is not configured as a honeypot role.`,
@@ -681,7 +693,7 @@ export class CommandHandler {
                 return;
             }
 
-            const rolesList = levelRoles.map(lr => 
+            const rolesList = levelRoles.map(lr =>
                 `Level **${lr.level}** → <@&${lr.role_id}>`
             ).join('\n');
 
@@ -711,7 +723,7 @@ export class CommandHandler {
         try {
             const member = await interaction.guild!.members.fetch(targetUser.id);
             const result = await this.xpService.addXP(member, 0); // Don't consider message length for manual addition
-            
+
             // Add additional XP directly
             await this.database.addUserXP(targetUser.id, guildId, amount - 15); // Subtract the automatic XP gain
 
@@ -734,11 +746,11 @@ export class CommandHandler {
     private createProgressBar(percentage: number, length: number = 20): string {
         const filled = Math.round((percentage / 100) * length);
         const empty = length - filled;
-        
+
         const progressBar = '█'.repeat(filled) + '░'.repeat(empty);
         return `[${progressBar}] ${percentage.toFixed(1)}%`;
     }
-    
+
     // TTS COMMANDS
     private async handleJoinCommand(interaction: ChatInputCommandInteraction): Promise<void> {
         try {
@@ -871,5 +883,101 @@ export class CommandHandler {
     // Helper method to get TTS channel
     private getTTSChannel(guildId: string): string | undefined {
         return this.ttsChannels.get(guildId);
+    }
+
+    private async handleEmailStatusCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            // You'll need to pass emailService to CommandHandler
+            const status = (this as any).emailService?.getStatus() || {
+                isRunning: false,
+                lastCheck: new Date(0),
+                channelName: null,
+                pollInterval: 0
+            };
+
+            const embed = new EmbedBuilder()
+                .setTitle('📧 Email Forwarding Status')
+                .setColor(status.isRunning ? 0x00FF00 : 0xFF0000)
+                .addFields(
+                    {
+                        name: '🔄 Status',
+                        value: status.isRunning ? '✅ Running' : '❌ Stopped',
+                        inline: true
+                    },
+                    {
+                        name: '📅 Last Check',
+                        value: status.lastCheck.getTime() > 0
+                            ? `<t:${Math.floor(status.lastCheck.getTime() / 1000)}:R>`
+                            : 'Never',
+                        inline: true
+                    },
+                    {
+                        name: '📢 Channel',
+                        value: status.channelName ? `#${status.channelName}` : 'Not set',
+                        inline: true
+                    },
+                    {
+                        name: '⏱️ Poll Interval',
+                        value: `${status.pollInterval} minutes`,
+                        inline: true
+                    }
+                )
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        } catch (error) {
+            console.error('❌ Error in email status command:', error);
+            await interaction.reply({
+                content: '❌ Error retrieving email status.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleEmailTestCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            const testResult = await (this as any).emailService?.testConnection();
+
+            if (testResult) {
+                await interaction.editReply({
+                    content: '✅ Email connection test successful! Microsoft Graph API is working.',
+                });
+            } else {
+                await interaction.editReply({
+                    content: '❌ Email connection test failed. Check configuration and credentials.',
+                });
+            }
+
+        } catch (error) {
+            console.error('❌ Error in email test command:', error);
+            await interaction.editReply({
+                content: '❌ Error testing email connection.',
+            });
+        }
+    }
+
+    private async handleEmailRestartCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            await interaction.deferReply({ ephemeral: true });
+
+            // Restart email service
+            (this as any).emailService?.stop();
+            await (this as any).emailService?.initialize();
+
+            await interaction.editReply({
+                content: '✅ Email forwarding service restarted successfully!',
+            });
+
+            console.log(`🔄 Email service restarted by ${interaction.user.tag}`);
+
+        } catch (error) {
+            console.error('❌ Error restarting email service:', error);
+            await interaction.editReply({
+                content: '❌ Error restarting email service.',
+            });
+        }
     }
 }

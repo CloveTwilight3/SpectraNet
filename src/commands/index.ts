@@ -142,7 +142,7 @@ export const commands = [
         .toJSON(),
 
 
-// TTS Commands
+    // TTS Commands
     new SlashCommandBuilder()
         .setName('join')
         .setDescription('Join your current voice channel for TTS')
@@ -171,7 +171,7 @@ export const commands = [
                     { name: 'Spanish', value: 'es' },
                     { name: 'French', value: 'fr' },
                     { name: 'German', value: 'de' }
-            ))
+                ))
         .setDefaultMemberPermissions(PermissionFlagsBits.Connect)
         .toJSON(),
 
@@ -183,5 +183,24 @@ export const commands = [
                 .setDescription('Text channel to read messages from')
                 .setRequired(true))
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+        .toJSON(),
+    // Email Service
+
+    new SlashCommandBuilder()
+        .setName('emailstatus')
+        .setDescription('Check email forwarding system status')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('emailtest')
+        .setDescription('Test email connection')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('emailrestart')
+        .setDescription('Restart email forwarding service')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON(),
 ];
