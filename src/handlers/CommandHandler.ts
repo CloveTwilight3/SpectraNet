@@ -8,23 +8,27 @@ import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
 import { EmailService } from '../services/EmailService';
 import { TranslationService } from '../services/TranslationService';
+import { HighlightsService } from '../services/HighlightsService';
 
 export class CommandHandler {
     private ttsChannels: Map<string, string> = new Map(); // guild -> channel mapping
     private xpService: XPService;
     private unbanService: ManualUnbanService;
     private emailService: EmailService;
+    private highlightsService: HighlightsService;
 
     constructor(
         private client: any,
         private database: DatabaseManager,
         private moderationService: ModerationService,
         private ttsService: TTSService,
-        emailService: EmailService
+        emailService: EmailService,
+        highlightsService: HighlightsService
     ) {
         this.xpService = new XPService(database);
         this.unbanService = new ManualUnbanService(database, moderationService);
         this.emailService = emailService;
+        this.highlightsService = highlightsService;
     }
 
     // Getter for TTS channels (so EventHandler can access it)
@@ -111,6 +115,14 @@ export class CommandHandler {
                 //Translate
                 case 'translate':
                     await this.handleTranslateInfoCommand(interaction);
+                    break;
+
+                // Highlights
+                case 'highlight':
+                    await this.handleHighlightCommand(interaction);
+                    break;
+                case 'highlightstats':
+                    await this.handleHighlightStatsCommand(interaction);
                     break;
 
             }
