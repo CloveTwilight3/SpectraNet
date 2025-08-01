@@ -20,7 +20,7 @@ services:
       timeout: 10s
       retries: 5
 
-  discord_bot:
+  bot:
     build: .
     container_name: spectranet_bot
     depends_on:
