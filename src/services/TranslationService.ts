@@ -18,7 +18,7 @@ interface TranslationResponse {
 
 export class TranslationService {
     private loggingService?: LoggingService;
-    
+
     // Flag emoji to language mapping
     private readonly flagToLanguage: Map<string, string> = new Map([
         // Major languages
@@ -60,7 +60,7 @@ export class TranslationService {
         ['🇱🇻', 'Latvian'],
         ['🇪🇪', 'Estonian'],
         ['🇸🇮', 'Slovenian'],
-        
+
         // Custom languages with special flags
         ['🏴‍☠️', 'PIRATE'], // Pirate flag for pirate speak
         ['🔮', 'SHAKESPEAREAN'], // Crystal ball for Shakespearean English
@@ -73,7 +73,7 @@ export class TranslationService {
         ['1327768099373584488', 'UWU']
     ]);
 
-    constructor() {}
+    constructor() { }
 
     setLoggingService(service: LoggingService): void {
         this.loggingService = service;
@@ -83,8 +83,8 @@ export class TranslationService {
      * Handle message reaction for translation
      */
     async handleTranslationReaction(
-        reaction: MessageReaction, 
-        user: User, 
+        reaction: MessageReaction,
+        user: User,
         message: Message
     ): Promise<void> {
         // Don't respond to bot reactions
@@ -114,9 +114,9 @@ export class TranslationService {
 
             if (translationResult.success && translationResult.translatedText) {
                 await this.sendTranslationResult(
-                    message, 
-                    user, 
-                    translationResult.translatedText, 
+                    message,
+                    user,
+                    translationResult.translatedText,
                     targetLanguage,
                     translationResult.detectedLanguage
                 );
@@ -127,7 +127,7 @@ export class TranslationService {
         } catch (error) {
             console.error('❌ Error handling translation reaction:', error);
             await this.sendTranslationError(message, user, 'An error occurred during translation');
-            
+
             await this.loggingService?.logError(
                 error instanceof Error ? error.message : String(error),
                 `Translation error for user ${user.tag}`
@@ -158,25 +158,25 @@ export class TranslationService {
      * Check if language is a custom language style
      */
     private isCustomLanguage(language: string): boolean {
-        const customLanguages = ['PIRATE', 'UWU', 'OWO', 'BABY_TALK', 'GEN_Z', 'BOOMER', 
-                                'SHAKESPEAREAN', 'ROBOT', 'ROYAL', 'FORMAL', 'CASUAL'];
+        const customLanguages = ['PIRATE', 'UWU', 'OWO', 'BABY_TALK', 'GEN_Z', 'BOOMER',
+            'SHAKESPEAREAN', 'ROBOT', 'ROYAL', 'FORMAL', 'CASUAL'];
         return customLanguages.includes(language);
     }
 
     /**
-     * Translate text using OpenAI
-     */
+ * Translate text using OpenAI
+ */
     private async translateText(request: TranslationRequest): Promise<TranslationResponse> {
         if (!CONFIG.OPENAI.API_KEY) {
             return {
                 success: false,
-                error: 'API key not configured'
+                error: 'OpenAI API key not configured'
             };
         }
 
         try {
             const prompt = this.buildTranslationPrompt(request);
-            
+
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -201,15 +201,21 @@ export class TranslationService {
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(`API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+                let errorMessage = 'Unknown error';
+                try {
+                    const errorData: any = await response.json();
+                    errorMessage = errorData.error?.message || 'Unknown error';
+                } catch (e) {
+                    errorMessage = `HTTP ${response.status}`;
+                }
+                throw new Error(`OpenAI API error: ${response.status} - ${errorMessage}`);
             }
 
-            const data = await response.json();
+            const data: any = await response.json();
             const translatedText = data.choices?.[0]?.message?.content?.trim();
 
             if (!translatedText) {
-                throw new Error('Empty response from provider');
+                throw new Error('Empty response from OpenAI');
             }
 
             return {
@@ -219,7 +225,7 @@ export class TranslationService {
             };
 
         } catch (error) {
-            console.error('❌ translation error:', error);
+            console.error('❌ OpenAI translation error:', error);
             return {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown translation error'
@@ -300,17 +306,17 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
 "${request.originalText}"`
         };
 
-        return prompts[request.targetLanguage as keyof typeof prompts] || 
-               `Transform the text in the style of ${request.targetLanguage}: "${request.originalText}"`;
+        return prompts[request.targetLanguage as keyof typeof prompts] ||
+            `Transform the text in the style of ${request.targetLanguage}: "${request.originalText}"`;
     }
 
     /**
      * Send translation result to Discord
      */
     private async sendTranslationResult(
-        originalMessage: Message, 
-        requester: User, 
-        translation: string, 
+        originalMessage: Message,
+        requester: User,
+        translation: string,
         targetLanguage: string,
         detectedLanguage?: string
     ): Promise<void> {
@@ -321,20 +327,20 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
                 .addFields(
                     {
                         name: '📝 Original',
-                        value: originalMessage.content.length > 1000 
+                        value: originalMessage.content.length > 1000
                             ? originalMessage.content.substring(0, 1000) + '...'
                             : originalMessage.content,
                         inline: false
                     },
                     {
                         name: `🎯 ${targetLanguage}`,
-                        value: translation.length > 1000 
+                        value: translation.length > 1000
                             ? translation.substring(0, 1000) + '...'
                             : translation,
                         inline: false
                     }
                 )
-                .setFooter({ 
+                .setFooter({
                     text: `Requested by ${requester.username}`,
                     iconURL: requester.displayAvatarURL({ size: 32 })
                 })
@@ -362,8 +368,8 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
      * Send translation error message
      */
     private async sendTranslationError(
-        originalMessage: Message, 
-        requester: User, 
+        originalMessage: Message,
+        requester: User,
         errorMessage: string
     ): Promise<void> {
         try {
@@ -371,7 +377,7 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
                 .setTitle('❌ Translation Error')
                 .setColor(0xFF4444)
                 .setDescription(errorMessage)
-                .setFooter({ 
+                .setFooter({
                     text: `Requested by ${requester.username}`,
                     iconURL: requester.displayAvatarURL({ size: 32 })
                 })
@@ -397,14 +403,14 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
      */
     getLanguageFlags(): { [language: string]: string[] } {
         const result: { [language: string]: string[] } = {};
-        
+
         for (const [flag, language] of this.flagToLanguage.entries()) {
             if (!result[language]) {
                 result[language] = [];
             }
             result[language].push(flag);
         }
-        
+
         return result;
     }
 }

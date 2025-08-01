@@ -1,5 +1,5 @@
 // src/handlers/EventHandler.ts
-import { Events, GuildMember, PartialGuildMember, Message } from 'discord.js';
+import { Events, GuildMember, PartialGuildMember, Message, MessageReaction, User, PartialUser, PartialMessageReaction } from 'discord.js';
 import { CONFIG } from '../config';
 import { ModerationService } from '../services/ModerationService';
 import { XPService } from '../services/XPService';
@@ -14,6 +14,10 @@ export class EventHandler {
 
     constructor(private moderationService: ModerationService, xpService: XPService) {
         this.xpService = xpService;
+    }
+
+    setTranslationService(translationService: TranslationService): void {
+        this.translationService = translationService;
     }
 
     // Method to set TTS service and channels (called from HoneypotBot)
