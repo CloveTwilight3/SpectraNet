@@ -21,6 +21,7 @@ import { SchedulerService } from '../services/SchedulerService';
 import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
 import { EmailService } from '../services/EmailService';
+import { TranslationService } from '../services/TranslationService';
 
 export class HoneypotBot {
     private client: Client;
@@ -36,6 +37,7 @@ export class HoneypotBot {
     private schedulerService!: SchedulerService;
     private ttsService!: TTSService;
     private emailService!: EmailService;
+    private translationService!: TranslationService;
 
     constructor() {
         this.client = new Client({
@@ -44,7 +46,8 @@ export class HoneypotBot {
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.MessageContent,
-                GatewayIntentBits.GuildVoiceStates, // Added for voice channel detection
+                GatewayIntentBits.GuildVoiceStates,
+                GatewayIntentBits.GuildMessageReactions,
             ],
         });
 
@@ -66,6 +69,7 @@ export class HoneypotBot {
         this.schedulerService = new SchedulerService(this.client);
         this.ttsService = new TTSService();
         this.emailService = new EmailService(this.client);
+        this.translationService = new TranslationService();
         
         // Initialize handlers after all services are created
         this.commandHandler = new CommandHandler(
@@ -91,9 +95,13 @@ export class HoneypotBot {
         this.unbanService.setLoggingService(this.loggingService);
         this.schedulerService.setLoggingService(this.loggingService);
         this.emailService.setLoggingService(this.loggingService);
+        this.translationService.setLoggingService(this.loggingService);
         
         // Connect TTS to EventHandler
         this.eventHandler.setTTSService(this.ttsService, this.commandHandler.getTTSChannels);
+
+        // Connect Translation to EventHandler
+        this.eventHandler.setTranslationService(this.translationService);
         
         console.log('✅ All services connected');
     }
@@ -122,6 +130,7 @@ export class HoneypotBot {
         console.log(`✨ XP system enabled`);
         console.log(`🎯 Onboarding detection enabled (rules agreement)`);
         console.log(`🔊 TTS system enabled`);
+        console.log(`🌐 Translation system enabled (OpenAI integration)`);
         console.log(`🛠️ Owner commands loaded (${ownerCommands.length} commands)`);
         
         // Initialize database and services
@@ -141,6 +150,10 @@ export class HoneypotBot {
         await this.loggingService.logSimple(
             `🤖 Honeypot Bot started successfully! Monitoring ${honeypotRoleCount} honeypot roles and ${honeypotChannelCount} channels. TTS system ready.`
         );
+    }
+
+    public getTranslationService(): TranslationService {
+        return this.translationService;
     }
 
     private async handleInteraction(interaction: any): Promise<void> {

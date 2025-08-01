@@ -203,4 +203,9 @@ export const commands = [
         .setDescription('Restart email forwarding service')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON(),
+
+    new SlashCommandBuilder()
+    .setName('translate')
+    .setDescription('Get information about the translation system')
+    .toJSON(),
 ];

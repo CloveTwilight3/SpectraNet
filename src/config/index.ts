@@ -7,8 +7,14 @@ export const CONFIG = {
     TOKEN: process.env.DISCORD_TOKEN,
     CLIENT_ID: process.env.CLIENT_ID,
 
-    // Email forwarding configuration
+    // OpenAI Config
+    OPENAI: {
+        API_KEY: process.env.OPENAI_API_KEY,
+        MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini', // Cost-effective model for translations
+        MAX_TOKENS: parseInt(process.env.OPENAI_MAX_TOKENS || '1000'),
+    },
 
+    // Email forwarding configuration
     EMAIL: {
         // Microsoft Graph API credentials
         CLIENT_ID: process.env.EMAIL_CLIENT_ID,

@@ -7,6 +7,7 @@ import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
 import { EmailService } from '../services/EmailService'; 
+import { TranslationService } from '../services/TranslationService';
 
 export class CommandHandler {
     private ttsChannels: Map<string, string> = new Map(); // guild -> channel mapping
@@ -106,6 +107,11 @@ export class CommandHandler {
                 case 'emailrestart':
                     await this.handleEmailRestartCommand(interaction);
                     break;
+
+                //Translate
+                case 'translate':
+                    await this.handleTranslateInfoCommand(interaction);
+                break;
 
             }
         } catch (error) {
@@ -981,6 +987,51 @@ export class CommandHandler {
             console.error('❌ Error restarting email service:', error);
             await interaction.editReply({
                 content: '❌ Error restarting email service.',
+            });
+        }
+    }
+
+    private async handleTranslateInfoCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            const embed = new EmbedBuilder()
+                .setTitle('🌐 Translation System')
+                .setDescription('React to any message with a flag emoji to translate it!')
+                .setColor(0x4A90E2)
+                .addFields(
+                    {
+                        name: '🏴 How to Use',
+                        value: '1. Find a message you want translated\n2. React with a flag emoji (🇺🇸, 🇪🇸, 🇫🇷, etc.)\n3. The bot will translate and reply!',
+                        inline: false
+                    },
+                    {
+                        name: '🎭 Special Languages',
+                        value: '🏴‍☠️ Pirate Speak\n🔮 Shakespearean\n🤖 Robot Speak\n👑 Royal Speech\n' +
+                           '**Custom Emojis:** :uwu:',
+                        inline: false
+                    },
+                    {
+                        name: '🌍 Popular Flags',
+                        value: '🇺🇸 English • 🇪🇸 Spanish • 🇫🇷 French • 🇩🇪 German\n' +
+                            '🇮🇹 Italian • 🇯🇵 Japanese • 🇰🇷 Korean • 🇨🇳 Chinese\n' +
+                            '🇷🇺 Russian • 🇵🇹 Portuguese • 🇳🇱 Dutch • 🇸🇪 Swedish',
+                        inline: false
+                    },
+                    {
+                        name: '⚡ Features',
+                        value: '• Auto-detects source language\n• Supports 40+ languages\n• Fun custom language styles\n• Powered by OpenAI',
+                        inline: false
+                    }
+                )
+                .setFooter({ text: 'Translation results may vary • Powered by OpenAI' })
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('❌ Error handling translate info command:', error);
+            await interaction.reply({
+                content: '❌ Error retrieving translation information.',
+                ephemeral: true,
             });
         }
     }

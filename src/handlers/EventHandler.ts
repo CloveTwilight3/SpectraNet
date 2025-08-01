@@ -4,11 +4,13 @@ import { CONFIG } from '../config';
 import { ModerationService } from '../services/ModerationService';
 import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
+import { TranslationService } from '../services/TranslationService';
 
 export class EventHandler {
     private xpService: XPService;
     private ttsService?: TTSService;
     private ttsChannels?: Map<string, string>;
+    private translationService?: TranslationService;
 
     constructor(private moderationService: ModerationService, xpService: XPService) {
         this.xpService = xpService;
@@ -59,6 +61,11 @@ export class EventHandler {
             await this.handleXPGain(message);
         });
 
+        // Add message reaction event listener for translations
+        client.on(Events.MessageReactionAdd, async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
+            await this.handleMessageReaction(reaction, user);
+        });
+
         // Error handling
         client.on('error', (error: Error) => {
             console.error('❌ Discord client error:', error);
@@ -67,6 +74,52 @@ export class EventHandler {
         process.on('unhandledRejection', (error) => {
             console.error('❌ Unhandled promise rejection:', error);
         });
+    }
+
+    private async handleMessageReaction(reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser): Promise<void> {
+        try {
+            // Fetch partial objects if needed
+            if (reaction.partial) {
+                try {
+                    await reaction.fetch();
+                } catch (error) {
+                    console.error('Failed to fetch reaction:', error);
+                    return;
+                }
+            }
+
+            if (user.partial) {
+                try {
+                    await user.fetch();
+                } catch (error) {
+                    console.error('Failed to fetch user:', error);
+                    return;
+                }
+            }
+
+            // Get the message
+            const message = reaction.message;
+            if (message.partial) {
+                try {
+                    await message.fetch();
+                } catch (error) {
+                    console.error('Failed to fetch message:', error);
+                    return;
+                }
+            }
+
+            // Handle translation if service is available
+            if (this.translationService && message instanceof Message && user instanceof User) {
+                await this.translationService.handleTranslationReaction(
+                    reaction as MessageReaction, 
+                    user, 
+                    message
+                );
+            }
+
+        } catch (error) {
+            console.error('❌ Error handling message reaction:', error);
+        }
     }
 
     private async handleRoleUpdate(oldMember: GuildMember | PartialGuildMember, newMember: GuildMember): Promise<void> {
