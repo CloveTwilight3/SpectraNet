@@ -204,8 +204,45 @@ export const commands = [
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .toJSON(),
 
+    //Translation System
     new SlashCommandBuilder()
-    .setName('translate')
-    .setDescription('Get information about the translation system')
-    .toJSON(),
+        .setName('translate')
+        .setDescription('Get information about the translation system')
+        .toJSON(),
+
+    // Highlights
+    new SlashCommandBuilder()
+        .setName('highlight')
+        .setDescription('Manage your highlight keywords')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('add')
+                .setDescription('Add a highlight keyword')
+                .addStringOption(option =>
+                    option.setName('keyword')
+                        .setDescription('Keyword to highlight (3-100 characters)')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('remove')
+                .setDescription('Remove a highlight keyword')
+                .addStringOption(option =>
+                    option.setName('keyword')
+                        .setDescription('Keyword to remove')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('list')
+                .setDescription('List your highlight keywords'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('clear')
+                .setDescription('Remove all your highlight keywords'))
+        .toJSON(),
+
+    new SlashCommandBuilder()
+        .setName('highlightstats')
+        .setDescription('View highlight system statistics for this server')
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+        .toJSON(),
 ];

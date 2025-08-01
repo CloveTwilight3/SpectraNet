@@ -5,12 +5,14 @@ import { ModerationService } from '../services/ModerationService';
 import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
 import { TranslationService } from '../services/TranslationService';
+import { HighlightsService } from '../services/HighlightsService';
 
 export class EventHandler {
     private xpService: XPService;
     private ttsService?: TTSService;
     private ttsChannels?: Map<string, string>;
     private translationService?: TranslationService;
+    private highlightsService?: HighlightsService;
 
     constructor(private moderationService: ModerationService, xpService: XPService) {
         this.xpService = xpService;
@@ -26,6 +28,10 @@ export class EventHandler {
         this.ttsChannels = ttsChannels;
     }
 
+    setHighlightsService(highlightsService: HighlightsService): void {
+        this.highlightsService = highlightsService;
+    }
+
     setupEventListeners(client: any): void {
         // Member role update event
         client.on(Events.GuildMemberUpdate, async (oldMember: GuildMember | PartialGuildMember, newMember: GuildMember) => {
@@ -36,14 +42,18 @@ export class EventHandler {
         client.on(Events.MessageCreate, async (message: Message) => {
             // Ignore bot messages
             if (message.author.bot || !message.guild) return;
-            
+
+            if (this.highlightsService) {
+                await this.highlightsService.processMessage(message);
+            }
+
             // Check if message is in a honeypot channel FIRST
             if (CONFIG.HONEYPOT_CHANNELS.includes(message.channel.id)) {
                 console.log(`🚨 Message in honeypot channel from user: ${message.author.tag} (${message.author.id})`);
-                
+
                 // Get the guild member
                 const member = message.guild?.members.cache.get(message.author.id);
-                
+
                 if (member) {
                     // Delete the message first
                     try {
@@ -56,11 +66,11 @@ export class EventHandler {
                     // Then permanently ban the member (honeypot channels are immediate bans)
                     await this.moderationService.banMember(member, CONFIG.BAN_REASONS.CHANNEL);
                 }
-                
+
                 // Don't process XP or TTS for honeypot messages - user is getting banned
                 return;
             }
-            
+
             // Process XP and TTS for non-honeypot messages
             await this.handleXPGain(message);
         });
@@ -115,8 +125,8 @@ export class EventHandler {
             // Handle translation if service is available
             if (this.translationService && message instanceof Message && user instanceof User) {
                 await this.translationService.handleTranslationReaction(
-                    reaction as MessageReaction, 
-                    user, 
+                    reaction as MessageReaction,
+                    user,
                     message
                 );
             }
@@ -150,7 +160,7 @@ export class EventHandler {
             if (honeypotRoleAdded) {
                 console.log(`🚨 Honeypot role detected for user: ${newMember.user.tag} (${newMember.id}) - Role: ${honeypotRoleAdded}`);
                 const roleConfig = CONFIG.HONEYPOT_ROLES[honeypotRoleAdded];
-                
+
                 if (roleConfig.type === 'timeout') {
                     await this.moderationService.timeoutMember(newMember, honeypotRoleAdded, roleConfig.duration);
                 } else {
@@ -173,42 +183,42 @@ export class EventHandler {
             // Check if TTS is enabled for this channel/VC
             if (this.ttsService && this.ttsChannels) {
                 const ttsChannelId = this.ttsChannels.get(message.guild.id);
-                
+
                 if (ttsChannelId && this.ttsService.isConnected(message.guild.id)) {
                     // Handle different channel types for TTS
                     let shouldReadMessage = false;
-                    
+
                     // Direct channel match (text channel or VC side channel)
                     if (ttsChannelId === message.channel.id) {
                         shouldReadMessage = true;
                     }
-                    
+
                     // Voice channel side chat (thread-like channels)
                     else if (message.channel.type === 11 && ttsChannelId === message.channel.parentId) { // 11 = GUILD_PUBLIC_THREAD
                         shouldReadMessage = true;
                     }
-                    
+
                     // Voice channel associated text channel (if VC ID matches)
                     else if (message.channel.type === 0) { // 0 = GUILD_TEXT
                         // Check if this text channel is associated with the voice channel
                         const guild = message.guild;
                         const voiceChannel = guild.channels.cache.get(ttsChannelId);
-                        
+
                         if (voiceChannel && voiceChannel.type === 2) { // 2 = GUILD_VOICE
                             // Check if text channel name matches or is in same category
                             const textChannel = message.channel;
-                            
+
                             // Same name pattern (e.g., "general" VC and "general" text)
                             if (voiceChannel.name.toLowerCase() === textChannel.name.toLowerCase()) {
                                 shouldReadMessage = true;
                             }
-                            
+
                             // Same category
                             else if (voiceChannel.parentId && voiceChannel.parentId === textChannel.parentId) {
                                 // Additional checks can be added here for more sophisticated matching
                                 const voiceName = voiceChannel.name.toLowerCase();
                                 const textName = textChannel.name.toLowerCase();
-                                
+
                                 // Check if text channel has "chat" or similar suffix/prefix
                                 if (textName.includes(voiceName) || voiceName.includes(textName)) {
                                     shouldReadMessage = true;
@@ -220,7 +230,7 @@ export class EventHandler {
                     if (shouldReadMessage) {
                         // Clean the message content for TTS
                         let messageContent = message.content;
-                        
+
                         // Don't read empty messages or just attachments
                         if (!messageContent.trim()) {
                             if (message.attachments.size > 0) {
@@ -231,15 +241,15 @@ export class EventHandler {
                                 return; // Skip empty messages
                             }
                         }
-                        
+
                         // Limit message length for TTS
                         if (messageContent.length > 200) {
                             messageContent = messageContent.substring(0, 200) + "... message truncated";
                         }
-                        
+
                         const messageToRead = `${message.author.displayName}: ${messageContent}`;
                         await this.ttsService.queueMessage(message.guild.id, messageToRead);
-                        
+
                         // console.log(`🔊 Queued TTS message from ${message.author.displayName} in ${message.channel.name}`);
                         const channelName = 'name' in message.channel ? message.channel.name : 'DM';
                         console.log(`🔊 Queued TTS message from ${message.author.displayName} in ${channelName}`);

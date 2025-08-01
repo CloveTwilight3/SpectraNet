@@ -6,7 +6,7 @@ import { ModerationService } from '../services/ModerationService';
 import { ManualUnbanService } from '../services/ManualUnbanService';
 import { XPService } from '../services/XPService';
 import { TTSService } from '../services/TTSService';
-import { EmailService } from '../services/EmailService'; 
+import { EmailService } from '../services/EmailService';
 import { TranslationService } from '../services/TranslationService';
 
 export class CommandHandler {
@@ -111,7 +111,7 @@ export class CommandHandler {
                 //Translate
                 case 'translate':
                     await this.handleTranslateInfoCommand(interaction);
-                break;
+                    break;
 
             }
         } catch (error) {
@@ -991,6 +991,8 @@ export class CommandHandler {
         }
     }
 
+    // Translations
+
     private async handleTranslateInfoCommand(interaction: ChatInputCommandInteraction): Promise<void> {
         try {
             const embed = new EmbedBuilder()
@@ -1006,7 +1008,7 @@ export class CommandHandler {
                     {
                         name: '🎭 Special Languages',
                         value: '🏴‍☠️ Pirate Speak\n🔮 Shakespearean\n🤖 Robot Speak\n👑 Royal Speech\n' +
-                           '**Custom Emojis:** :uwu:',
+                            '**Custom Emojis:** :uwu:',
                         inline: false
                     },
                     {
@@ -1031,6 +1033,173 @@ export class CommandHandler {
             console.error('❌ Error handling translate info command:', error);
             await interaction.reply({
                 content: '❌ Error retrieving translation information.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    // Highlights
+    private async handleHighlightCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        const subcommand = interaction.options.getSubcommand();
+        const userId = interaction.user.id;
+        const guildId = interaction.guildId!;
+
+        try {
+            switch (subcommand) {
+                case 'add':
+                    await this.handleHighlightAdd(interaction, userId, guildId);
+                    break;
+                case 'remove':
+                    await this.handleHighlightRemove(interaction, userId, guildId);
+                    break;
+                case 'list':
+                    await this.handleHighlightList(interaction, userId, guildId);
+                    break;
+                case 'clear':
+                    await this.handleHighlightClear(interaction, userId, guildId);
+                    break;
+            }
+        } catch (error) {
+            console.error('❌ Error handling highlight command:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ An error occurred while processing the highlight command.',
+                    ephemeral: true,
+                });
+            }
+        }
+    }
+
+    private async handleHighlightAdd(
+        interaction: ChatInputCommandInteraction,
+        userId: string,
+        guildId: string
+    ): Promise<void> {
+        const keyword = interaction.options.getString('keyword', true);
+
+        const result = await this.highlightsService.addHighlight(userId, guildId, keyword);
+
+        if (result.success) {
+            await interaction.reply({
+                content: `✅ Added highlight for \`${keyword}\`. You'll be notified when this word is mentioned!`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: `❌ ${result.error}`,
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleHighlightRemove(
+        interaction: ChatInputCommandInteraction,
+        userId: string,
+        guildId: string
+    ): Promise<void> {
+        const keyword = interaction.options.getString('keyword', true);
+
+        const success = await this.highlightsService.removeHighlight(userId, guildId, keyword);
+
+        if (success) {
+            await interaction.reply({
+                content: `✅ Removed highlight for \`${keyword}\`.`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: `❌ You don't have a highlight for \`${keyword}\`.`,
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleHighlightList(
+        interaction: ChatInputCommandInteraction,
+        userId: string,
+        guildId: string
+    ): Promise<void> {
+        const highlights = await this.highlightsService.getUserHighlights(userId, guildId);
+
+        if (highlights.length === 0) {
+            await interaction.reply({
+                content: '📝 You don\'t have any highlights set up. Use `/highlight add` to add some!',
+                ephemeral: true,
+            });
+            return;
+        }
+
+        const keywordsList = highlights
+            .map((h, index) => `${index + 1}. \`${h.keyword}\``)
+            .join('\n');
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔍 Your Highlights')
+            .setDescription(keywordsList)
+            .setColor(0x00AE86)
+            .setFooter({
+                text: `${highlights.length}/50 highlights • Use /highlight remove to remove keywords`,
+            })
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    private async handleHighlightClear(
+        interaction: ChatInputCommandInteraction,
+        userId: string,
+        guildId: string
+    ): Promise<void> {
+        const count = await this.highlightsService.clearUserHighlights(userId, guildId);
+
+        if (count > 0) {
+            await interaction.reply({
+                content: `✅ Cleared all ${count} highlight keywords.`,
+                ephemeral: true,
+            });
+        } else {
+            await interaction.reply({
+                content: '📝 You don\'t have any highlights to clear.',
+                ephemeral: true,
+            });
+        }
+    }
+
+    private async handleHighlightStatsCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+        try {
+            const stats = await this.highlightsService.getStats(interaction.guildId!);
+
+            const embed = new EmbedBuilder()
+                .setTitle('📊 Highlight System Statistics')
+                .setColor(0x5865F2)
+                .addFields(
+                    {
+                        name: '🔍 Total Highlights',
+                        value: stats.totalHighlights.toLocaleString(),
+                        inline: true
+                    },
+                    {
+                        name: '👥 Active Users',
+                        value: stats.activeUsers.toLocaleString(),
+                        inline: true
+                    },
+                    {
+                        name: '📈 Average per User',
+                        value: stats.activeUsers > 0
+                            ? (stats.totalHighlights / stats.activeUsers).toFixed(1)
+                            : '0',
+                        inline: true
+                    }
+                )
+                .setTimestamp()
+                .setFooter({ text: 'Highlight System Statistics' });
+
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+
+        } catch (error) {
+            console.error('❌ Error handling highlight stats command:', error);
+            await interaction.reply({
+                content: '❌ Error retrieving highlight statistics.',
                 ephemeral: true,
             });
         }

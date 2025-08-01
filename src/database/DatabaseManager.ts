@@ -2,6 +2,14 @@
 import { Pool } from 'pg';
 import { CONFIG } from '../config';
 
+export interface Highlight {
+    id: number;
+    user_id: string;
+    guild_id: string;
+    keyword: string;
+    created_at: Date;
+}
+
 export interface TempBan {
     id: number;
     user_id: string;
@@ -40,7 +48,7 @@ export class DatabaseManager {
     constructor() {
         // Determine SSL configuration
         let sslConfig;
-        
+
         if (process.env.DATABASE_SSL === 'true') {
             sslConfig = { rejectUnauthorized: false };
         } else if (process.env.DATABASE_SSL === 'false') {
@@ -87,6 +95,29 @@ export class DatabaseManager {
     }
 
     private async createTables(): Promise<void> {
+
+        await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS highlights (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(20) NOT NULL,
+                guild_id VARCHAR(20) NOT NULL,
+                keyword VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                UNIQUE(user_id, guild_id, keyword)
+            )
+        `);
+
+        // Create indexes for highlights
+        await this.pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_highlights_guild_keyword 
+            ON highlights (guild_id, keyword)
+        `);
+
+        await this.pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_highlights_user_guild 
+            ON highlights (user_id, guild_id)
+        `);
+
         // Create temp_bans table
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS temp_bans (
@@ -151,7 +182,7 @@ export class DatabaseManager {
             throw error;
         }
     }
-    
+
     async addTempBan(userId: string, guildId: string, roleId: string, unbanAt: Date, reason: string): Promise<void> {
         await this.pool.query(`
             INSERT INTO temp_bans (user_id, guild_id, role_id, unban_at, reason)
@@ -226,6 +257,76 @@ export class DatabaseManager {
         `, [guildId]);
 
         return result.rowCount || 0;
+    }
+
+    // ==================== HIGHLIGHTS METHODS ====================
+
+    async addHighlight(userId: string, guildId: string, keyword: string): Promise<boolean> {
+        try {
+            await this.pool.query(`
+            INSERT INTO highlights (user_id, guild_id, keyword)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id, keyword) DO NOTHING
+        `, [userId, guildId, keyword.toLowerCase()]);
+            return true;
+        } catch (error) {
+            console.error('Error adding highlight:', error);
+            return false;
+        }
+    }
+
+    async removeHighlight(userId: string, guildId: string, keyword: string): Promise<boolean> {
+        const result = await this.pool.query(`
+        DELETE FROM highlights 
+        WHERE user_id = $1 AND guild_id = $2 AND keyword = $3
+    `, [userId, guildId, keyword.toLowerCase()]);
+
+        return (result.rowCount || 0) > 0;
+    }
+
+    async getUserHighlights(userId: string, guildId: string): Promise<Highlight[]> {
+        const result = await this.pool.query(`
+        SELECT * FROM highlights 
+        WHERE user_id = $1 AND guild_id = $2 
+        ORDER BY keyword ASC
+    `, [userId, guildId]);
+
+        return result.rows;
+    }
+
+    async clearUserHighlights(userId: string, guildId: string): Promise<number> {
+        const result = await this.pool.query(`
+        DELETE FROM highlights 
+        WHERE user_id = $1 AND guild_id = $2
+    `, [userId, guildId]);
+
+        return result.rowCount || 0;
+    }
+
+    async getHighlightsForMessage(guildId: string, messageContent: string): Promise<Highlight[]> {
+        const words = messageContent.toLowerCase().split(/\s+/);
+        const result = await this.pool.query(`
+        SELECT DISTINCT h.* FROM highlights h
+        WHERE h.guild_id = $1 
+        AND (${words.map((_, i) => `h.keyword = $${i + 2}`).join(' OR ')})
+    `, [guildId, ...words]);
+
+        return result.rows;
+    }
+
+    async getHighlightStats(guildId: string): Promise<{ totalHighlights: number; activeUsers: number }> {
+        const result = await this.pool.query(`
+        SELECT 
+            COUNT(*) as total_highlights,
+            COUNT(DISTINCT user_id) as active_users
+        FROM highlights 
+        WHERE guild_id = $1
+    `, [guildId]);
+
+        return {
+            totalHighlights: parseInt(result.rows[0]?.total_highlights || '0'),
+            activeUsers: parseInt(result.rows[0]?.active_users || '0')
+        };
     }
 
     // ==================== XP SYSTEM METHODS ====================

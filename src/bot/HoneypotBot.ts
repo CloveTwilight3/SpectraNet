@@ -22,6 +22,7 @@ import { commands } from '../commands';
 import { ownerCommands, ErrorLogger } from '../commands/owner/OwnerCommands';
 import { EmailService } from '../services/EmailService';
 import { TranslationService } from '../services/TranslationService';
+import { HighlightsService } from '../services/HighlightsService';
 
 export class HoneypotBot {
     private client: Client;
@@ -38,6 +39,7 @@ export class HoneypotBot {
     private ttsService!: TTSService;
     private emailService!: EmailService;
     private translationService!: TranslationService;
+    private highlightsService!: HighlightsService;
 
     constructor() {
         this.client = new Client({
@@ -70,6 +72,7 @@ export class HoneypotBot {
         this.ttsService = new TTSService();
         this.emailService = new EmailService(this.client);
         this.translationService = new TranslationService();
+        this.highlightsService = new HighlightsService(this.client, this.database);
         
         // Initialize handlers after all services are created
         this.commandHandler = new CommandHandler(
@@ -77,7 +80,8 @@ export class HoneypotBot {
             this.database,
             this.moderationService,
             this.ttsService,
-            this.emailService
+            this.emailService,
+            this.highlightsService
         );
         this.eventHandler = new EventHandler(this.moderationService, this.xpService);
         
@@ -96,12 +100,16 @@ export class HoneypotBot {
         this.schedulerService.setLoggingService(this.loggingService);
         this.emailService.setLoggingService(this.loggingService);
         this.translationService.setLoggingService(this.loggingService);
+        this.highlightsService.setLoggingService(this.loggingService);
         
         // Connect TTS to EventHandler
         this.eventHandler.setTTSService(this.ttsService, this.commandHandler.getTTSChannels);
 
         // Connect Translation to EventHandler
         this.eventHandler.setTranslationService(this.translationService);
+
+        // Connect Highlights to EventHandler
+        this.eventHandler.setHighlightsService(this.highlightsService);
         
         console.log('✅ All services connected');
     }
@@ -131,6 +139,7 @@ export class HoneypotBot {
         console.log(`🎯 Onboarding detection enabled (rules agreement)`);
         console.log(`🔊 TTS system enabled`);
         console.log(`🌐 Translation system enabled (OpenAI integration)`);
+        console.log(`🔔 Highlights system enabled`);
         console.log(`🛠️ Owner commands loaded (${ownerCommands.length} commands)`);
         
         // Initialize database and services
@@ -148,7 +157,7 @@ export class HoneypotBot {
         const honeypotRoleCount = Object.keys(CONFIG.HONEYPOT_ROLES).length;
         const honeypotChannelCount = CONFIG.HONEYPOT_CHANNELS.length;
         await this.loggingService.logSimple(
-            `🤖 Honeypot Bot started successfully! Monitoring ${honeypotRoleCount} honeypot roles and ${honeypotChannelCount} channels. TTS system ready.`
+            `🤖 Honeypot Bot started successfully! Monitoring ${honeypotRoleCount} honeypot roles and ${honeypotChannelCount} channels. TTS system ready. Highlights active and can Translate!`
         );
     }
 
