@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS user_xp (
     UNIQUE(user_id, guild_id)
 );
 
+-- Create the highlights table
+CREATE TABLE IF NOT EXISTS highlights (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(20) NOT NULL,
+    guild_id VARCHAR(20) NOT NULL,
+    keyword VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, guild_id, keyword)
+);
+
 -- Create the level_roles table for role rewards
 CREATE TABLE IF NOT EXISTS level_roles (
     id SERIAL PRIMARY KEY,
@@ -58,6 +68,13 @@ ON user_xp (user_id, guild_id);
 
 CREATE INDEX IF NOT EXISTS idx_level_roles_guild_level 
 ON level_roles (guild_id, level);
+
+-- Create indexes for highlights
+CREATE INDEX IF NOT EXISTS idx_highlights_guild_keyword 
+ON highlights (guild_id, keyword);
+
+CREATE INDEX IF NOT EXISTS idx_highlights_user_guild 
+ON highlights (user_id, guild_id);
 
 -- Optional: Create a view for active bans
 CREATE OR REPLACE VIEW active_temp_bans AS
@@ -160,4 +177,5 @@ DO $$
 BEGIN
     RAISE NOTICE 'Honeypot bot database initialized successfully at %', NOW();
     RAISE NOTICE 'XP leveling system initialized successfully at %', NOW();
+    RAISE NOTICE 'Highlights system initialized successfully at %', NOW();
 END $$;
