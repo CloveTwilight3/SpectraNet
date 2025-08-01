@@ -90,14 +90,29 @@ export class TranslationService {
         // Don't respond to bot reactions
         if (user.bot) return;
 
-        // Don't translate bot messages or empty messages
-        if (message.author.bot || !message.content.trim()) return;
+        // Don't translate empty messages
+        if (!message.content.trim()) return;
+
+        // Only exclude messages from THIS bot (prevent translation loops)
+        // Check if the message author is the same as the bot that received the reaction
+        if (message.author.id === reaction.message.client.user?.id) {
+            console.log(`🚫 Skipping translation of own message from ${message.author.tag}`);
+            return;
+        }
 
         try {
             const targetLanguage = await this.getLanguageFromReaction(reaction);
             if (!targetLanguage) return; // Not a translation emoji
 
-            console.log(`🌐 Translation requested: ${message.content.substring(0, 50)}... -> ${targetLanguage} by ${user.tag}`);
+            // Determine message type for better logging
+            const isWebhook = message.webhookId !== null;
+            const isBot = message.author.bot;
+            const messageType = isWebhook ? 'webhook' : 
+                              isBot ? 'bot' : 'user';
+            
+            // Enhanced logging to show what we're translating
+            const authorName = isWebhook ? `${message.author.username} (webhook)` : message.author.tag;
+            console.log(`🌐 Translation requested (${messageType}): "${message.content.substring(0, 50)}${message.content.length > 50 ? '...' : ''}" -> ${targetLanguage} by ${user.tag} (from ${authorName})`);
 
             // Check if message is too long
             if (message.content.length > 2000) {
@@ -118,7 +133,8 @@ export class TranslationService {
                     user,
                     translationResult.translatedText,
                     targetLanguage,
-                    translationResult.detectedLanguage
+                    translationResult.detectedLanguage,
+                    messageType
                 );
             } else {
                 await this.sendTranslationError(message, user, translationResult.error || 'Translation failed');
@@ -318,15 +334,25 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
         requester: User,
         translation: string,
         targetLanguage: string,
-        detectedLanguage?: string
+        detectedLanguage?: string,
+        messageType?: string
     ): Promise<void> {
         try {
+            // Get the original author info, handling webhooks and bots differently
+            let authorInfo = originalMessage.author.username;
+            
+            if (originalMessage.webhookId) {
+                authorInfo = `${originalMessage.author.username}`;
+            } else if (originalMessage.author.bot && originalMessage.author.id !== originalMessage.client.user?.id) {
+                authorInfo = `${originalMessage.author.username}`;
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle('🌐 Translation')
                 .setColor(0x4A90E2)
                 .addFields(
                     {
-                        name: '📝 Original',
+                        name: `📝 Original (${authorInfo})`,
                         value: originalMessage.content.length > 1000
                             ? originalMessage.content.substring(0, 1000) + '...'
                             : originalMessage.content,
@@ -341,26 +367,23 @@ by royalty with proper etiquette. Only provide the translation, no explanations:
                     }
                 )
                 .setFooter({
-                    text: `Requested by ${requester.username}`,
+                    text: `Requested by ${requester.username}${messageType ? ` • Source: ${messageType}` : ''}`,
                     iconURL: requester.displayAvatarURL({ size: 32 })
                 })
                 .setTimestamp();
 
-            // Add detected language info if available and not custom
-            if (detectedLanguage && !this.isCustomLanguage(targetLanguage)) {
-                embed.addFields({
-                    name: '🔍 Detected Language',
-                    value: detectedLanguage,
-                    inline: true
-                });
-            }
-
             await originalMessage.reply({ embeds: [embed] });
+
+            console.log(`✅ Translation sent: ${targetLanguage} for ${messageType} message from ${authorInfo}`);
 
         } catch (error) {
             console.error('❌ Error sending translation result:', error);
             // Fallback to simple text message
-            await originalMessage.reply(`🌐 **Translation to ${targetLanguage}:**\n${translation}`);
+            try {
+                await originalMessage.reply(`🌐 **Translation to ${targetLanguage}:**\n${translation}`);
+            } catch (fallbackError) {
+                console.error('❌ Error sending fallback translation:', fallbackError);
+            }
         }
     }
 
