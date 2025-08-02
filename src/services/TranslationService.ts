@@ -23,7 +23,7 @@ export class TranslationService {
     private readonly flagToLanguage: Map<string, string> = new Map([
         // Major languages
         ['🇺🇸', 'English'], ['🇬🇧', 'English'], ['🇦🇺', 'English'], ['🇨🇦', 'English'], ['🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'English'],
-        ['🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Welsh'], ['🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Scottish']
+        ['🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Welsh'], ['🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Scottish'],
         ['🇪🇸', 'Spanish'], ['🇲🇽', 'Spanish'], ['🇦🇷', 'Spanish'], ['🇨🇴', 'Spanish'],
         ['🇫🇷', 'French'], ['🇨🇦', 'French (Canadian)'],
         ['🇩🇪', 'German'], ['🇦🇹', 'German'], ['🇨🇭', 'German'],
