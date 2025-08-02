@@ -22,7 +22,8 @@ export class TranslationService {
     // Flag emoji to language mapping
     private readonly flagToLanguage: Map<string, string> = new Map([
         // Major languages
-        ['🇺🇸', 'English'], ['🇬🇧', 'English'], ['🇦🇺', 'English'], ['🇨🇦', 'English'],
+        ['🇺🇸', 'English'], ['🇬🇧', 'English'], ['🇦🇺', 'English'], ['🇨🇦', 'English'], ['🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'English'],
+        ['🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Welsh'], ['🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Scottish']
         ['🇪🇸', 'Spanish'], ['🇲🇽', 'Spanish'], ['🇦🇷', 'Spanish'], ['🇨🇴', 'Spanish'],
         ['🇫🇷', 'French'], ['🇨🇦', 'French (Canadian)'],
         ['🇩🇪', 'German'], ['🇦🇹', 'German'], ['🇨🇭', 'German'],
@@ -66,6 +67,8 @@ export class TranslationService {
         ['🔮', 'SHAKESPEAREAN'], // Crystal ball for Shakespearean English
         ['🤖', 'ROBOT'], // Robot for robotic speech
         ['👑', 'ROYAL'], // Crown for royal/formal speech
+        ['🏳️‍🌈', 'GAY'], // GAY!
+        ['🏳️‍⚧️', 'GAY'],
     ]);
 
     // Custom server emoji mappings (you can extend this)
@@ -175,7 +178,7 @@ export class TranslationService {
      */
     private isCustomLanguage(language: string): boolean {
         const customLanguages = ['PIRATE', 'UWU', 'OWO', 'BABY_TALK', 'GEN_Z', 'BOOMER',
-            'SHAKESPEAREAN', 'ROBOT', 'ROYAL', 'FORMAL', 'CASUAL'];
+            'SHAKESPEAREAN', 'ROBOT', 'ROYAL', 'FORMAL', 'CASUAL', 'GAY'];
         return customLanguages.includes(language);
     }
 
@@ -268,56 +271,60 @@ Only provide the translation, no explanations:
      */
     private buildCustomLanguagePrompt(request: TranslationRequest): string {
         const prompts = {
+            'GAY': `Transform the following text into gay-like speech using authentic gay language, 
+terminology, and speech patterns. Use words like "slay", "glam" etcOnly provide the translation, no explanations:
+
+"${request.originalText}"`,
             'PIRATE': `Transform the following text into pirate speak using authentic pirate language, 
-terminology, and speech patterns. Use words like "ye", "arr", "matey", "scurvy", etc. Only provide the translation, no explanations::
+terminology, and speech patterns. Use words like "ye", "arr", "matey", "scurvy", etc. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'UWU': `Transform the following text into UwU speak by replacing certain letters 
-(r/l with w, n with ny, etc.) and adding cute expressions like "uwu", "owo", ">.<" Only provide the translation, no explanations::
+(r/l with w, n with ny, etc.) and adding cute expressions like "uwu", "owo", ">.<" Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'OWO': `Transform the following text into OwO speak similar to UwU but with "owo" 
-expressions and cat-like speech patterns. Only provide the translation, no explanations::
+expressions and cat-like speech patterns. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'BABY_TALK': `Transform the following text into baby talk using simple words, 
-repetition, and childlike expressions. Only provide the translation, no explanations::
+repetition, and childlike expressions. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'GEN_Z': `Transform the following text into Gen Z slang using terms like "no cap", 
-"fr", "slaps", "based", "slay", etc. Only provide the translation, no explanations::
+"fr", "slaps", "based", "slay", etc. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'BOOMER': `Transform the following text into how a boomer might speak, using 
-formal language and boomer expressions. Only provide the translation, no explanations::
+formal language and boomer expressions. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'SHAKESPEAREAN': `Transform the following text into Shakespearean English using 
-"thou", "thee", "thy", "hath", etc. Only provide the translation, no explanations::
+"thou", "thee", "thy", "hath", etc. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'ROBOT': `Transform the following text into robotic speech with technical 
-terminology and robotic expressions. Only provide the translation, no explanations::
+terminology and robotic expressions. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
             'ROYAL': `Transform the following text into royal/formal speech as if spoken 
-by royalty with proper etiquette. Only provide the translation, no explanations::
+by royalty with proper etiquette. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
-            'FORMAL': `Transform the following text into very formal, professional language. Only provide the translation, no explanations::
+            'FORMAL': `Transform the following text into very formal, professional language. Only provide the translation, no explanations:
 
 "${request.originalText}"`,
 
-            'CASUAL': `Transform the following text into very casual, informal speech. Only provide the translation, no explanations::
+            'CASUAL': `Transform the following text into very casual, informal speech. Only provide the translation, no explanations:
 
 "${request.originalText}"`
         };
